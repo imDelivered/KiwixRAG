@@ -154,7 +154,7 @@ wget -c https://download.kiwix.org/zim/wikipedia/wikipedia_en_all_nopic_2025-07.
 wget -c https://download.kiwix.org/zim/wikipedia/wikipedia_es_all_nopic_2025-07.zim
 ```
 
-**Note:** ZIM files can be large (~1.5 - 100GB). You can skip this step if you just want to test the chat without Kiwix content features. The app will work, but `/wiki` commands won't function.
+**Note:** ZIM files can be large! You can skip this step if you just want to test the chat without Kiwix content features. The app will work, but `/wiki` commands won't function.
 
 ### Step 6: Get the Kiwix RAG Code
 
