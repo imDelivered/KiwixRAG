@@ -129,6 +129,6 @@ if ! ollama list | awk '{print $1}' | grep -qx "llama3.2:1b"; then
 fi
 
 # Pass all arguments (including --zim-file if provided) to Python script
-exec python3 "$SCRIPT_DIR/wiki_chat.py" --model llama3.2:1b "$@"
+exec python3 "$SCRIPT_DIR/kiwix_chat.py" --model llama3.2:1b "$@"
 
 

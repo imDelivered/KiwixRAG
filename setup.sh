@@ -58,7 +58,7 @@ fi
 
 # Step 6: Make scripts executable
 echo "[6/6] Setting up scripts..."
-chmod +x run_wiki_chat.sh 2>/dev/null || true
+chmod +x run_kiwix_chat.sh 2>/dev/null || true
 chmod +x setup.sh 2>/dev/null || true
 echo "✓ Scripts made executable"
 
@@ -67,7 +67,7 @@ echo "=== Setup Complete! ==="
 echo ""
 echo "Everything is ready! Just run:"
 echo ""
-echo "  ./run_wiki_chat.sh"
+echo "  ./run_kiwix_chat.sh"
 echo ""
 echo "The launcher will automatically:"
 echo "  • Start Ollama server"

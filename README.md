@@ -35,17 +35,17 @@ cd OWRs-main
 chmod +x setup.sh && ./setup.sh
 
 # 3. Start the app (it handles everything automatically)
-./run_wiki_chat.sh
+./run_kiwix_chat.sh
 ```
 
 **What happens automatically:**
 - Setup script installs Python, Ollama, and Kiwix
-- `run_wiki_chat.sh` starts Ollama server automatically
+- `run_kiwix_chat.sh` starts Ollama server automatically
 - Downloads the AI model if needed (first run only)
 - Starts Kiwix server if ZIM file is found
 - Launches the chat interface
 
-**That's it!** No manual steps needed - just run `./run_wiki_chat.sh` after setup.
+**That's it!** No manual steps needed - just run `./run_kiwix_chat.sh` after setup.
 
 ---
 
@@ -171,12 +171,12 @@ cd /path/to/wiki-chat
 
 Make the launcher executable:
 ```bash
-chmod +x run_wiki_chat.sh
+chmod +x run_kiwix_chat.sh
 ```
 
 Run it:
 ```bash
-./run_wiki_chat.sh
+./run_kiwix_chat.sh
 ```
 
 The launcher will:
@@ -213,7 +213,7 @@ AI: [Provides detailed answer with Wikipedia context if available]
 
 Run with custom settings:
 ```bash
-python3 wiki_chat.py --model llama3.2:1b --detailed --wiki-max-chars 6000
+python3 kiwix_chat.py --model llama3.2:1b --detailed --wiki-max-chars 6000
 ```
 
 Available options:
@@ -262,7 +262,7 @@ ls -lh *.zim
 kiwix-serve --port=8081 /path/to/your/wikipedia_XX_all_nopic_2025-07.zim
 
 # Or specify ZIM file when running the app
-python3 wiki_chat.py --zim-file /path/to/your/wikipedia_es_all_nopic_2025-07.zim
+python3 kiwix_chat.py --zim-file /path/to/your/wikipedia_es_all_nopic_2025-07.zim
 ```
 
 ### Python/Tkinter Issues
@@ -297,7 +297,7 @@ python3 -c "import tkinter; print('OK')"
 - **Ollama**: Runs the AI language model (llama3, etc.)
 - **Kiwix**: Serves Wikipedia articles from the ZIM file
 - **ZIM File**: Contains all Wikipedia articles offline
-- **wiki_chat.py**: The main chat application (Kiwix RAG)
+- **kiwix_chat.py**: The main chat application (Kiwix RAG)
 
 ## Notes
 
@@ -311,7 +311,7 @@ python3 -c "import tkinter; print('OK')"
 
 **Start everything:**
 ```bash
-./run_wiki_chat.sh
+./run_kiwix_chat.sh
 ```
 
 **Manual start (if launcher has issues):**
@@ -323,7 +323,7 @@ ollama serve
 kiwix-serve --port=8081 /path/to/your/wikipedia_XX_all_nopic_2025-07.zim
 
 # Terminal 3: Run the app
-python3 wiki_chat.py --model llama3.2:1b
+python3 kiwix_chat.py --model llama3.2:1b
 ```
 
 That's it! You're ready to chat with AI + Wikipedia.

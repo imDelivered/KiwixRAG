@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import caching module
 try:
-    from wiki_cache import (
+    from kiwix_cache import (
         get_cached_article, cache_article,
         get_cached_topics, cache_topics,
         get_cached_search, cache_search
