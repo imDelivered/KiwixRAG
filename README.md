@@ -1,6 +1,6 @@
-# Wiki Chat
+# Kiwix RAG
 
-Terminal chat app for Ollama with local Wikipedia integration via Kiwix.
+Terminal chat app for Ollama with local Wikipedia integration via Kiwix. Features Retrieval Augmented Generation (RAG) for enhanced factual responses.
 
 **⚠️ Platform Note:** This software is currently Linux-only. Windows and macOS support may be added in the future.
 
@@ -140,7 +140,7 @@ wget -c https://download.kiwix.org/zim/wikipedia/wikipedia_es_all_nopic_2025-07.
 
 **Note:** The ZIM file can be large (~1.5 - 100GB). You can skip this step if you just want to test the chat without Wikipedia features. The app will work, but `/wiki` commands won't function.
 
-### Step 6: Get the Wiki Chat Code
+### Step 6: Get the Kiwix RAG Code
 
 ```bash
 # Clone or download this repository
@@ -281,7 +281,7 @@ python3 -c "import tkinter; print('OK')"
 - **Ollama**: Runs the AI language model (llama3, etc.)
 - **Kiwix**: Serves Wikipedia articles from the ZIM file
 - **ZIM File**: Contains all Wikipedia articles offline
-- **wiki_chat.py**: The main chat application
+- **wiki_chat.py**: The main chat application (Kiwix RAG)
 
 ## Notes
 

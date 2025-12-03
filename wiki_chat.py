@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-Terminal chat app for Ollama (dolphin-llama3)
+Kiwix RAG - Terminal chat app for Ollama with local Wikipedia integration
 
 Features:
+- Retrieval Augmented Generation (RAG) with local Wikipedia via Kiwix
 - Simple terminal chat loop with history
 - Uses Ollama chat API with streaming output
-- Commands: /exit, /clear
+- Commands: /exit, /clear, /wiki, /view
 - Clickable hyperlinks in terminal that open Wikipedia articles in popup
 - Popup window with clickable links that open in browser
+- Multi-language support (any ZIM file from Kiwix library)
 
 Requirements: Python >= 3.10, Ollama running locally (ollama serve), tkinter
 """
@@ -167,7 +169,7 @@ class HTMLParserWithLinks(HTMLParser):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Terminal chat app using Ollama's dolphin-llama3.",
+        description="Kiwix RAG - Terminal chat app with local Wikipedia integration via Kiwix and Ollama.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Model name (Ollama)")
@@ -2633,8 +2635,8 @@ def generate_response_with_regeneration(
     }
 
 
-class WikiChatGUI:
-    """GUI chat interface with interactive mouse features."""
+class KiwixRAGGUI:
+    """GUI chat interface with interactive mouse features for Kiwix RAG."""
     
     def __init__(self, model: str, system_prompt: str, streaming_enabled: bool, 
                  wiki_max_chars: int, detailed_mode: bool, show_links: bool,
@@ -2667,7 +2669,7 @@ class WikiChatGUI:
         self.omnifetch = False  # OmniFetch mode: use existing wiki data to reason when direct data isn't found
         
         self.root = self.tk.Tk()
-        self.root.title(f"Wiki Chat - {model}")
+        self.root.title(f"Kiwix RAG - {model}")
         self.root.geometry("900x700")
         
         # Chat display area - enable selection but prevent editing
@@ -2930,7 +2932,7 @@ class WikiChatGUI:
                     self.model = new_model
                     self.update_status(f"Model changed to: {new_model}")
                     # Update window title
-                    self.root.title(f"Wiki Chat - {new_model}")
+                    self.root.title(f"Kiwix RAG - {new_model}")
                     self.append_message("system", f"Model changed to: {new_model}")
                 model_window.destroy()
         
@@ -3477,7 +3479,7 @@ class WikiChatGUI:
         # Title label
         title_label = self.tk.Label(
             help_window,
-            text="Wiki Chat - Help & Settings",
+            text="Kiwix RAG - Help & Settings",
             font=("Arial", 16, "bold"),
             bg=bg_color,
             fg=fg_color
@@ -4525,7 +4527,7 @@ def main() -> int:
     # Launch GUI mode by default, unless --terminal flag is set
     if not args.terminal:
         try:
-            gui = WikiChatGUI(
+            gui = KiwixRAGGUI(
                 model=model,
                 system_prompt=system_prompt,
                 streaming_enabled=streaming_enabled,

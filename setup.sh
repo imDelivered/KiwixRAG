@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "=== Wiki Chat Setup Script ==="
+echo "=== Kiwix RAG Setup Script ==="
 echo ""
 
 # Check if running as root

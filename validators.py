@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Response validation module for Wiki Chat system.
+Response validation module for Kiwix RAG system.
 Validates mathematical calculations, medical safety, physics concepts, and response quality.
 """
 
