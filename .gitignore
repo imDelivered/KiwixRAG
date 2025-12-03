@@ -1,0 +1,42 @@
+# Large ZIM files - don't commit these (Wikipedia data)
+*.zim
+wiki
+
+# AI model files and directory - don't commit these
+models/
+*.gguf
+*.bin
+*.safetensors
+
+# Large archive files
+*.zip
+*.tar.gz
+*.tar
+
+# Test data and temporary files
+test_results.json
+zioQQ2ka
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
