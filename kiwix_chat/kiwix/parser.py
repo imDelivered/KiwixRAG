@@ -75,3 +75,4 @@ class KiwixSearchParser(HTMLParser):
             self.current_href = None
 
 
+

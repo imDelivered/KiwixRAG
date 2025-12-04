@@ -210,3 +210,4 @@ def index_article(
         vector_store.add_chunks(chunks)
 
 
+
