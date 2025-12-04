@@ -87,8 +87,10 @@ class VectorStore:
         chunk_embeddings = generate_embeddings_batch(chunk_texts, show_progress=False, is_query=False)
         
         for chunk, embedding in zip(chunks, chunk_embeddings):
-            # Create unique ID: article_title_chunk_idx
-            chunk_id = f"{chunk.article_title}_{chunk.chunk_idx}".replace("/", "_").replace(" ", "_")
+            # Create unique ID: include href to ensure uniqueness across articles
+            # Use hash of href to keep ID short but unique
+            href_hash = hashlib.md5(chunk.href.encode()).hexdigest()[:8]
+            chunk_id = f"{href_hash}_{chunk.chunk_idx}"
             ids.append(chunk_id)
             texts.append(chunk.text)
             embeddings.append(embedding)

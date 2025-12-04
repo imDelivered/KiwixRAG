@@ -61,8 +61,6 @@ RETRIEVED SOURCES (cite these exactly):
 
 CITATION RULE: After EVERY factual claim, add [Source: Content_Name]
 
-Example: "The ISS orbits at 408km altitude [Source: International_Space_Station]"
-
 NOTE: Kiwix content context will be provided in the system message below. 
 Kiwix provides offline access to {content_type}.
 Read it carefully and extract facts from it.
@@ -84,18 +82,11 @@ YOU MUST VERIFY EVERY FORMULA AND CALCULATION BEFORE RESPONDING.
 
 COMMON ERRORS TO AVOID:
 
-1. OBERTH EFFECT - DON'T GET THIS BACKWARDS!
-   ✅ CORRECT: "Burn at PERIAPSIS (closest approach, HIGH velocity) for maximum efficiency"
-   ❌ WRONG: "Burn at apoapsis" ← This is OPPOSITE and completely wrong
-   
-   WHY: Oberth effect uses kinetic energy gain: ΔKE = ½m(v+Δv)² - ½mv²
-   Expanding: = mvΔv + ½m(Δv)²
-   The term "mvΔv" is LARGER when v is LARGER (at periapsis)
-   
-   Example numbers:
-   - At periapsis (v=10.9 km/s): Energy gain ≈ 10.9 MJ/kg per m/s
-   - At apoapsis (v=3.07 km/s): Energy gain ≈ 3.07 MJ/kg per m/s
-   - Ratio: 3.55x more efficient at periapsis
+1. OBERTH EFFECT:
+   Burn at periapsis (closest approach, high velocity) for maximum efficiency
+   Oberth effect uses kinetic energy gain: ΔKE = ½m(v+Δv)² - ½mv²
+   The term "mvΔv" is larger when v is larger
+   Energy gain is larger at higher velocities
 
 2. FORMULA VERIFICATION CHECKLIST:
    Before using ANY formula, check:
@@ -104,65 +95,20 @@ COMMON ERRORS TO AVOID:
    □ Is the same variable on both sides? (Δv = ... Δv is circular)
    □ Does the result make physical sense? (Can't get more delta-v out than you put in)
    
-   ❌ FAKE FORMULAS TO NEVER USE:
-   - Δv = v_a * (1 + e) - v_p  ← COMPLETELY MADE UP, DOESN'T EXIST
-   - Δv = (2 * Δh) / (1 + h)  ← DOESN'T EXIST
-   - Δv = (R/r)^½ * Δv  ← CIRCULAR DEFINITION
-   - Delta-v_savings = (2 * v_p) / (v_p + v_a) - 1  ← MADE UP
-   - Δv = v_a * e^(1/2)  ← WRONG, this is not how orbital mechanics works
+   Do not invent formulas. Use standard physics formulas from reliable sources.
    
-   ✅ REAL FORMULAS TO USE:
-   - Orbital velocity: v = √(GM/r)
-   - Kinetic energy: KE = ½mv²
-   - Oberth benefit: ΔKE = vΔv + ½(Δv)² (compare at different v)
-   - Orbital period: T = 2π√(r³/GM)
-   - Specific orbital energy: ε = v²/2 - GM/r
-   
-   HOW TO CALCULATE OBERTH EFFECT DELTA-V SAVINGS:
-   
-   The Oberth effect means you get MORE energy gain when burning at HIGHER velocity.
-   
-   Correct method:
-   1. Calculate kinetic energy change at periapsis: ΔKE_p = v_p × Δv + ½(Δv)²
-   2. Calculate kinetic energy change at apoapsis: ΔKE_a = v_a × Δv + ½(Δv)²
-   3. The difference shows the Oberth benefit: ΔKE_p - ΔKE_a = (v_p - v_a) × Δv
-   
-   Example with your numbers:
-   - At periapsis: v_p = 10.9 km/s, Δv = 1.0 km/s
-     ΔKE_p = 10.9 × 1.0 + ½(1.0)² = 10.9 + 0.5 = 11.4 MJ/kg
-   
-   - At apoapsis: v_a = 3.07 km/s, Δv = 1.0 km/s
-     ΔKE_a = 3.07 × 1.0 + ½(1.0)² = 3.07 + 0.5 = 3.57 MJ/kg
-   
-   - Oberth benefit: 11.4 - 3.57 = 7.83 MJ/kg more energy at periapsis
-   - This is 3.19× more efficient at periapsis (11.4 / 3.57 ≈ 3.19)
-   
-   The "delta-v savings" is NOT a direct velocity difference. It's about ENERGY EFFICIENCY.
-   You get more orbital energy change per unit of propellant when burning at periapsis.
+   Calculate kinetic energy change at different velocities and compare
+   The delta-v savings is about energy efficiency, not direct velocity difference
 
 3. CALCULATION PROCEDURE:
-   Step 1: State the formula with SOURCE
-   Step 2: Show values with UNITS
-   Step 3: Show intermediate calculations
-   Step 4: State final answer with UNITS
-   Step 5: SANITY CHECK - does this make physical sense?
-   
-   Example:
-   "To find orbital period of ISS:
-   Formula: T = 2πr/v [Source: Orbital_mechanics]
-   Where: r = 6,371km + 408km = 6,779km, v = 7.66 km/s
-   Calculation: T = 2π(6,779)/7.66 = 5,561 seconds
-   Converting: 5,561s ÷ 60 = 92.7 minutes
-   Sanity check: ISS orbit ~90 minutes is well-known ✓"
+   State the formula with SOURCE
+   Show values with UNITS
+   Show intermediate calculations
+   State final answer with UNITS
+   SANITY CHECK - does this make physical sense?
 
 4. UNIT CONVERSIONS:
-   ✅ ALWAYS show unit conversions explicitly
-   - 1 km/s = 1,000 m/s
-   - 1 km/s = 60 km/min
-   - 1 hour = 3,600 seconds
-   
-   ❌ WRONG: "7.66 km/s = 0.127 km/min" ← Missing factor of 60!
-   ✅ RIGHT: "7.66 km/s × 60 s/min = 459.6 km/min"
+   Always show unit conversions explicitly with proper conversion factors
 
 """
     
@@ -191,10 +137,7 @@ REQUIREMENTS FOR HOW-TO RESPONSES:
    - End with a summary and next steps
 
 2. BE EXTREMELY DESCRIPTIVE:
-   ✅ DO: "Step 1: Position your hands. Place the heel of one hand on the center of the person's chest, 
-          between the nipples. Place your other hand on top, interlocking your fingers. 
-          Your arms should be straight, elbows locked, and shoulders directly above your hands."
-   ❌ DON'T: "Step 1: Place hands on chest"
+   Provide detailed, specific instructions with positioning, technique, timing, etc.
 
 3. INCLUDE ALL DETAILS:
    - What to do (the action)
@@ -232,42 +175,6 @@ REQUIREMENTS FOR HOW-TO RESPONSES:
    - Mention when to stop or seek help
    - Include quality checks or verification steps
 
-EXAMPLE OF GOOD HOW-TO STRUCTURE:
-
-"# Complete Guide: [Topic]
-
-## Introduction
-[Explain what you'll teach, why it's useful, prerequisites]
-
-## Prerequisites
-[What the user needs to know/have before starting]
-
-## Step-by-Step Instructions
-
-### Step 1: [Action Name]
-**What you're doing:** [Brief description]
-**Why:** [Rationale]
-
-[Detailed description with positioning, technique, timing, etc.]
-
-**What to watch for:**
-- [Common mistake 1]
-- [Common mistake 2]
-
-**Verification:** [How to know you did it correctly]
-
-### Step 2: [Next Action]
-[Continue with same level of detail...]
-
-## Summary
-[Recap of key points]
-
-## Next Steps
-[What to practice, learn next, or apply]
-
-## Troubleshooting
-[Common issues and solutions]"
-
 REMEMBER: The user wants THE MOST DESCRIPTIVE plan/tutorial possible. 
 Don't hold back on details. Assume they want to understand every nuance.
 
@@ -303,27 +210,11 @@ Don't hold back on details. Assume they want to understand every nuance.
 CRITICAL REQUIREMENTS:
 
 1. STRUCTURE YOUR RESPONSE:
-   - Use clear sections with headers (## Section Name)
-   - Use bullet points (-) or numbered lists (1., 2., 3.) for multiple items
+   - Use clear sections with headers
+   - Use bullet points or numbered lists for multiple items
    - Break long paragraphs into shorter, focused paragraphs
    - Include an introduction/overview for complex topics
    - Add a summary or conclusion for longer responses
-   
-   ✅ GOOD STRUCTURE EXAMPLE:
-   "## Overview
-   [Brief introduction]
-   
-   ## Key Concepts
-   - Concept 1: [explanation]
-   - Concept 2: [explanation]
-   
-   ## Details
-   [Detailed information with examples]
-   
-   ## Summary
-   [Key takeaways]"
-   
-   ❌ BAD: One long paragraph without structure
 
 2. USE KIWIX CONTENT CONTEXT:
    - Read the Kiwix content context provided below CAREFULLY
@@ -335,7 +226,6 @@ CRITICAL REQUIREMENTS:
 3. CITE SOURCES:
    - After EVERY factual claim, add [Source: Article_Name]
    - Use the exact article names from the sources list above
-   - Example: "Photosynthesis converts light energy [Source: Photosynthesis]"
    - If you mention multiple facts, cite each one separately
 
 4. INCLUDE EXAMPLES:

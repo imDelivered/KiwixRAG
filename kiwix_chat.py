@@ -283,6 +283,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Show RAG system status (ZIM file, index, models) and exit.",
     )
+    parser.add_argument(
+        "--iterative-rag",
+        action="store_true",
+        default=True,  # Make it default
+        help="Use iterative RAG with dynamic context pruning and verification (default: enabled).",
+    )
+    parser.add_argument(
+        "--no-iterative-rag",
+        action="store_false",
+        dest="iterative_rag",
+        help="Disable iterative RAG and use simple streaming RAG instead.",
+    )
     return parser.parse_args()
 
 
@@ -1477,96 +1489,115 @@ def _validate_topic_with_variations(topic: str) -> Optional[str]:
 
 
 def intelligent_wiki_fetch(model: str, user_query: str, max_chars_per_article: int, max_total_chars: int, use_rag: bool = True) -> Optional[Tuple[str, List[str], List[dict]]]:
-    """Intelligently fetch Kiwix content based on user query intent.
+    """Intelligently fetch Kiwix content using semantic RAG.
     Works with any Kiwix ZIM content.
     
-    Uses RAG (vector embeddings) if available, otherwise falls back to LLM topic extraction + keyword search.
+    Uses RAG (vector embeddings) for semantic search. Requires vector index to be built.
     Returns (combined_text, found_content_list, sources_list) or None.
     sources_list contains dicts with 'title', 'url', 'excerpt'.
     
     Args:
-        model: LLM model name (for fallback method)
+        model: LLM model name (unused, kept for compatibility)
         user_query: User's query
         max_chars_per_article: Maximum characters per article/chunk
         max_total_chars: Maximum total characters across all results
-        use_rag: Whether to use RAG if index is available (default: True)
+        use_rag: Whether to use RAG (default: True)
     """
     import sys
+    from kiwix_chat.kiwix.client import get_current_zim_file_path
     
-    # Try RAG first if enabled
-    if use_rag:
-        try:
-            from kiwix_chat.kiwix.client import get_current_zim_file_path
-            from kiwix_chat.rag.vector_store import get_vector_store, is_indexed
-            from kiwix_chat.rag.retriever import RAGRetriever
-            from kiwix_chat.rag.context_builder import build_context
-            
-            zim_file_path = get_current_zim_file_path()
-            
-            if not zim_file_path:
-                print(f"[rag] ERROR: No ZIM file found. RAG unavailable.", file=sys.stderr)
-                print(f"[rag] To use RAG: Place a .zim file in the app folder and run: --build-index", file=sys.stderr)
-                return None
-            elif not is_indexed(zim_file_path):
-                import os
-                zim_name = os.path.basename(zim_file_path)
-                print("", file=sys.stderr)
-                print("=" * 70, file=sys.stderr)
-                print(f"[rag] ERROR: No vector index found for '{zim_name}'", file=sys.stderr)
-                print("=" * 70, file=sys.stderr)
-                print("[rag] RAG SYSTEM REQUIRED: The system cannot retrieve precise information without the vector index.", file=sys.stderr)
-                print("[rag] Without RAG, the system cannot use semantic search to find accurate, specific content.", file=sys.stderr)
-                print("", file=sys.stderr)
-                print("[rag] TO ENABLE RAG (REQUIRED):", file=sys.stderr)
-                print("[rag]   python3 kiwix_chat.py --build-index", file=sys.stderr)
-                print("", file=sys.stderr)
-                print("[rag] This creates embeddings for semantic search (one-time setup, may take time).", file=sys.stderr)
-                print("[rag] The system will NOT function properly until the index is built.", file=sys.stderr)
-                print("=" * 70, file=sys.stderr)
-                print("", file=sys.stderr)
-                return None
-            else:
-                # Index exists, use RAG
-                print(f"[rag] Using RAG retrieval for: '{user_query}'", file=sys.stderr)
-                
-                # Get vector store and retriever
-                vector_store = get_vector_store(zim_file_path)
-                retriever = RAGRetriever(zim_file_path, vector_store)
-                
-                # Retrieve chunks
-                chunks = retriever.retrieve(
-                    query=user_query,
-                    top_k=5,
-                    use_hybrid=True
-                )
-                
-                if chunks:
-                    # Build context from chunks
-                    context, sources = build_context(chunks, user_query, max_total_chars)
-                    
-                    if context and context.strip():
-                        # Extract article names for found_articles list
-                        found_articles = list(set(chunk.article_title for chunk in chunks))
-                        
-                        print(f"[rag] Retrieved {len(chunks)} chunks from {len(found_articles)} articles", file=sys.stderr)
-                        return (context, found_articles, sources)
-                
-                print(f"[rag] ERROR: No relevant chunks found for query: '{user_query}'", file=sys.stderr)
-                return None
-        except ImportError as e:
-            print(f"[rag] ERROR: RAG dependencies not available: {e}", file=sys.stderr)
-            print(f"[rag] Install with: pip install sentence-transformers chromadb", file=sys.stderr)
-            return None
-        except Exception as e:
-            import traceback
-            print(f"[rag] ERROR: RAG retrieval failed: {e}", file=sys.stderr)
-            if "--debug" in sys.argv or "-v" in sys.argv:
-                traceback.print_exc(file=sys.stderr)
-            return None
+    if not use_rag:
+        print(f"[rag] ERROR: RAG is disabled. Set use_rag=True to use RAG system.", file=sys.stderr)
+        return None
     
-    # If RAG is disabled, return None (no fallback)
-    print(f"[rag] ERROR: RAG is disabled. Set use_rag=True to use RAG system.", file=sys.stderr)
-    return None
+    zim_file_path = get_current_zim_file_path()
+    if not zim_file_path:
+        print(f"[rag] ERROR: No ZIM file found. Place a .zim file in the app folder and run: --build-index", file=sys.stderr)
+        return None
+    
+    try:
+        from kiwix_chat.rag.vector_store import get_vector_store, is_indexed
+        from kiwix_chat.rag.retriever import RAGRetriever
+    except ImportError as e:
+        print(f"[rag] ERROR: RAG dependencies not available: {e}", file=sys.stderr)
+        print(f"[rag] Install with: pip install sentence-transformers chromadb", file=sys.stderr)
+        return None
+    
+    if not is_indexed(zim_file_path):
+        import os
+        zim_name = os.path.basename(zim_file_path)
+        print("", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print(f"[rag] ERROR: No vector index found for '{zim_name}'", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print("[rag] RAG SYSTEM REQUIRED: The system cannot retrieve precise information without the vector index.", file=sys.stderr)
+        print("[rag] Without RAG, the system cannot use semantic search to find accurate, specific content.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("[rag] TO ENABLE RAG (REQUIRED):", file=sys.stderr)
+        print("[rag]   python3 kiwix_chat.py --build-index", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("[rag] This creates embeddings for semantic search (one-time setup, may take time).", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
+        print("", file=sys.stderr)
+        return None
+    
+    # Use semantic search (RAG) with token buffer system
+    print(f"[rag] Using RAG retrieval for: '{user_query}'", file=sys.stderr)
+    try:
+        from kiwix_chat.rag.token_buffer import TokenBuffer
+        
+        vector_store = get_vector_store(zim_file_path)
+        retriever = RAGRetriever(zim_file_path, vector_store)
+        chunks = retriever.retrieve(query=user_query, top_k=5, use_hybrid=True)
+        
+        if chunks:
+            # Initialize token buffer (max tokens = max_total_chars / 4, rough estimate)
+            # Convert character limit to token limit (1 token ≈ 4 chars)
+            max_tokens = max_total_chars // 4
+            token_buffer = TokenBuffer(max_tokens=max_tokens, pruning_strategy="relevance")
+            
+            # Extract relevance scores from retrieval order
+            # Chunks are returned sorted by relevance (first = most relevant)
+            # Assign scores: most relevant = 1.0, decreasing by 0.1
+            relevance_scores = [max(0.1, 1.0 - (i * 0.15)) for i in range(len(chunks))]
+            
+            # Add chunks to token buffer (tokenizes and stores in RAM)
+            # This is where tokenization happens - chunks are converted to tokens
+            print(f"[rag] Tokenizing {len(chunks)} chunks into buffer (max {max_tokens} tokens)...", file=sys.stderr)
+            token_buffer.add_chunks(chunks, relevance_scores)
+            
+            # Get active tokens (after pruning if needed)
+            stats = token_buffer.get_buffer_stats()
+            print(f"[rag] Token buffer: {stats['current_tokens']}/{stats['max_tokens']} tokens ({stats['chunk_count']} chunks)", file=sys.stderr)
+            
+            # Get text representation from active buffer
+            context = token_buffer.get_active_text()
+            
+            if context and context.strip():
+                # Build sources list
+                found_articles = list(set(chunk.article_title for chunk in chunks))
+                sources = []
+                seen_articles = set()
+                for chunk in chunks:
+                    if chunk.article_title not in seen_articles:
+                        seen_articles.add(chunk.article_title)
+                        sources.append({
+                            'title': chunk.article_title,
+                            'url': chunk.href,
+                            'excerpt': chunk.text[:200] + '...' if len(chunk.text) > 200 else chunk.text
+                        })
+                
+                print(f"[rag] Retrieved {len(chunks)} chunks from {len(found_articles)} articles (active buffer: {stats['chunk_count']} chunks)", file=sys.stderr)
+                return (context, found_articles, sources)
+        
+        print(f"[rag] ERROR: No relevant chunks found for query: '{user_query}'", file=sys.stderr)
+        return None
+    except Exception as e:
+        import traceback
+        print(f"[rag] ERROR: RAG retrieval failed: {e}", file=sys.stderr)
+        if "--debug" in sys.argv or "-v" in sys.argv:
+            traceback.print_exc(file=sys.stderr)
+        return None
 
 
 def detect_missing_context(model: str, user_query: str, ai_response: str, existing_context: List[str]) -> List[str]:
@@ -1815,16 +1846,7 @@ Return ONLY article names, one per line, or 'NONE' if you have enough informatio
                     # Add the combined context once per concept
                     if ctx:
                         all_context_parts.append(ctx)
-                else:
-                    # Try direct fallback
-                    fallback_result = kiwix_fetch_article(concept, max_chars_per_article)
-                    if fallback_result:
-                        fallback_ctx = fallback_result[0]
-                        if concept not in fetched_set:
-                            fetched_articles.append(concept)
-                            fetched_set.add(concept)
-                            all_context_parts.append(f"=== Wikipedia: {concept} ===\n{fallback_ctx}")
-                            new_articles_fetched = True
+                # No keyword fallback - RAG only
             
             if not new_articles_fetched:
                 break
@@ -2016,16 +2038,13 @@ def show_wiki_popup(query: str, wiki_max_chars: int = 10000) -> None:
 
 
 def annotate_text_with_wiki_links(text: str, wiki_max_chars: int) -> Tuple[str, Dict[str, str]]:
-    """Detect Wikipedia-capable entities and map to Kiwix hrefs.
+    """Detect Wikipedia-capable entities (no keyword search - RAG only).
     Returns (original_text, entity_to_href_map)."""
     entities = detect_entities(text)
     entity_map: Dict[str, str] = {}
 
-    # For each detected entity, try to find it in Kiwix
-    for entity in entities:
-        href = kiwix_search_first_href(entity)
-        if href:
-            entity_map[entity] = href
+    # No keyword search - entities detected but not searched
+    # Links can be created via RAG if needed, but not via keyword search
     return text, entity_map
 
 
@@ -2217,7 +2236,8 @@ def generate_response_with_regeneration(
     system_prompt: str,
     wiki_context: Optional[Dict] = None,
     streaming_enabled: bool = True,
-    max_attempts: int = 3
+    max_attempts: int = 3,
+    use_iterative_rag: bool = False
 ) -> Dict:
     """
     Generate response with validation that Wikipedia context is used.
@@ -2276,9 +2296,36 @@ def generate_response_with_regeneration(
             if streaming_enabled:
                 accumulated: List[str] = []
                 print("AI: ", end="", flush=True)
-                for chunk in stream_chat(model, messages):
-                    accumulated.append(chunk)
-                    print(chunk, end="", flush=True)
+                
+                # Use iterative RAG if enabled and ZIM file is available
+                if use_iterative_rag:
+                    from kiwix_chat.kiwix.client import get_current_zim_file_path
+                    from kiwix_chat.rag.iterative_rag import stream_iterative_rag_response
+                    zim_file_path = get_current_zim_file_path()
+                    if zim_file_path:
+                        try:
+                            for chunk in stream_iterative_rag_response(
+                                model=model,
+                                query=query,
+                                messages=messages,
+                                zim_file_path=zim_file_path,
+                                max_tokens=2048
+                            ):
+                                accumulated.append(chunk)
+                                print(chunk, end="", flush=True)
+                        except Exception as e:
+                            print(f"\n[iterative-rag] Error: {e}, falling back to normal generation", file=sys.stderr)
+                            for chunk in stream_chat(model, messages):
+                                accumulated.append(chunk)
+                                print(chunk, end="", flush=True)
+                    else:
+                        for chunk in stream_chat(model, messages):
+                            accumulated.append(chunk)
+                            print(chunk, end="", flush=True)
+                else:
+                    for chunk in stream_chat(model, messages):
+                        accumulated.append(chunk)
+                        print(chunk, end="", flush=True)
                 print()
                 response = "".join(accumulated)
             else:
@@ -2327,7 +2374,7 @@ class KiwixRAGGUI:
     def __init__(self, model: str, system_prompt: str, streaming_enabled: bool, 
                  wiki_max_chars: int, detailed_mode: bool, show_links: bool,
                  recursive_wiki: bool = False, max_recursive_iterations: int = 3,
-                 no_auto_wiki: bool = False, use_rag: bool = True):
+                 no_auto_wiki: bool = False, use_rag: bool = True, use_iterative_rag: bool = False):
         try:
             import tkinter as tk
             from tkinter import ttk, scrolledtext, messagebox
@@ -2348,6 +2395,7 @@ class KiwixRAGGUI:
         self.max_recursive_iterations = max_recursive_iterations
         self.no_auto_wiki = no_auto_wiki
         self.use_rag = use_rag
+        self.use_iterative_rag = use_iterative_rag
         
         self.history: List[Message] = []
         self.entity_map: Dict[str, str] = {}
@@ -3821,11 +3869,44 @@ class KiwixRAGGUI:
                 
                 if self.streaming_enabled:
                     accumulated: List[str] = []
-                    for chunk in stream_chat(self.model, messages):
-                        accumulated.append(chunk)
-                        self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
-                        self.chat_display.see(self.tk.END)
-                        self.root.update()
+                    
+                    # Use iterative RAG if enabled
+                    if self.use_iterative_rag:
+                        from kiwix_chat.kiwix.client import get_current_zim_file_path
+                        from kiwix_chat.rag.iterative_rag import stream_iterative_rag_response
+                        zim_file_path = get_current_zim_file_path()
+                        if zim_file_path:
+                            try:
+                                for chunk in stream_iterative_rag_response(
+                                    model=self.model,
+                                    query=user_input,
+                                    messages=messages,
+                                    zim_file_path=zim_file_path,
+                                    max_tokens=2048
+                                ):
+                                    accumulated.append(chunk)
+                                    self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
+                                    self.chat_display.see(self.tk.END)
+                                    self.root.update()
+                            except Exception as e:
+                                self.update_status(f"Iterative RAG error: {e}, using normal generation")
+                                for chunk in stream_chat(self.model, messages):
+                                    accumulated.append(chunk)
+                                    self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
+                                    self.chat_display.see(self.tk.END)
+                                    self.root.update()
+                        else:
+                            for chunk in stream_chat(self.model, messages):
+                                accumulated.append(chunk)
+                                self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
+                                self.chat_display.see(self.tk.END)
+                                self.root.update()
+                    else:
+                        for chunk in stream_chat(self.model, messages):
+                            accumulated.append(chunk)
+                            self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
+                            self.chat_display.see(self.tk.END)
+                            self.root.update()
                     assistant_reply = "".join(accumulated)
                 else:
                     assistant_reply = full_chat(self.model, messages)
@@ -3901,101 +3982,15 @@ class KiwixRAGGUI:
                             content_type = _get_content_type_description()
                             self.update_status(f"RAG unavailable for '{query}'. Build index with: --build-index")
                 except Exception as e:
-                    # Show error and fallback
+                    # Show error - no keyword fallback
                     import traceback
-                    self.update_status(f"Error: {str(e)} - trying fallback...")
-                    result = kiwix_fetch_article(query, self.wiki_max_chars)
-                    if result:
-                        ctx = result[0]
-                        self.history.append(Message(role="system", content=f"Wikipedia context for '{query}':\n{ctx}"))
-                        self.update_status(f"Wikipedia context added for '{query}'")
-                    else:
-                        content_type = _get_content_type_description()
-                        self.update_status(f"{content_type} not found for '{query}'")
+                    self.update_status(f"Error: {str(e)}. RAG unavailable - build index with: --build-index")
+                    content_type = _get_content_type_description()
+                    self.update_status(f"{content_type} not found for '{query}'. RAG required.")
             return
         
-        # Automatically fetch wiki context ONLY for very specific factual queries
-        # Most conversational queries will NOT trigger auto-fetch - the AI can request wiki if needed using [WIKI: topic]
-        should_fetch = should_fetch_wiki_context(user_input)
-        if not self.no_auto_wiki and should_fetch:
-            import sys
-            print(f"[DEBUG] Auto-fetch triggered for query: '{user_input}'", file=sys.stderr)
-            # Check if this is a tutorial query (auto-detect "how to" queries)
-            tutorial_patterns = [
-                'how do i', 'how to', 'how can i', 'how would i', 'how should i',
-                'how do you', 'how does one', 'how might i', 'how could i',
-                'teach me', 'show me how', 'explain how to', 'steps to',
-                'guide to', 'tutorial', 'instructions for', 'way to',
-                'walk me through', 'demonstrate', 'procedure for', 'process to',
-                'method to', 'technique for', 'approach to', 'recipe for',
-                'make a', 'build a', 'create a', 'construct a', 'assemble a',
-                'do i', 'can you show', 'can you teach', 'can you explain',
-                'step by step', 'step-by-step', 'detailed instructions',
-                'complete guide', 'full guide', 'comprehensive guide'
-            ]
-            is_tutorial_query = any(pattern in user_input.lower() for pattern in tutorial_patterns)
-            
-            if is_tutorial_query:
-                self.update_status(f"Tutorial detected! Fetching comprehensive Wikipedia context...")
-            else:
-                self.update_status(f"Fetching Wikipedia context for factual query...")
-            self.root.update()
-            
-            try:
-                ctx, found_articles = recursive_context_augmentation(
-                    self.model,
-                    user_input,
-                    max_iterations=self.max_recursive_iterations,
-                    max_chars_per_article=self.wiki_max_chars,
-                    max_total_chars=self.wiki_max_chars * 5,
-                    use_rag=self.use_rag,
-                    system_prompt=self.system_prompt
-                )
-                if found_articles:
-                    articles_str = ", ".join(found_articles)
-                    # Mark as tutorial context if it's a tutorial query
-                    context_label = "tutorial" if is_tutorial_query else "auto-fetched"
-                    self.history.append(Message(
-                        role="system",
-                        content=f"Wikipedia context ({context_label}: {articles_str}):\n{ctx}"
-                    ))
-                    if is_tutorial_query:
-                        self.update_status(f"Tutorial context ready: {articles_str}. Generating detailed tutorial...")
-                    else:
-                        self.update_status(f"Context ready: {articles_str}")
-                else:
-                    # Try simpler intelligent fetch as fallback
-                    result = intelligent_wiki_fetch(
-                        self.model,
-                        user_input,
-                        max_chars_per_article=self.wiki_max_chars,
-                        max_total_chars=self.wiki_max_chars * 3,
-                        use_rag=self.use_rag
-                    )
-                    if result:
-                        ctx, found_articles, sources = result if len(result) > 2 else (result[0], result[1], [])
-                        articles_str = ", ".join(found_articles)
-                        # Mark as tutorial context if it's a tutorial query
-                        context_label = "tutorial" if is_tutorial_query else "auto-fetched"
-                        self.history.append(Message(
-                            role="system",
-                            content=f"Wikipedia context ({context_label}: {articles_str}):\n{ctx}"
-                        ))
-                        if sources:
-                            self.history.append(Message(role="system", content=f"SOURCES: {json.dumps(sources)}"))
-                        if is_tutorial_query:
-                            self.update_status(f"Tutorial context ready: {articles_str}. Generating detailed tutorial...")
-                        else:
-                            self.update_status(f"Context ready: {articles_str}")
-            except Exception as e:
-                # Log error but continue - don't block the query
-                import sys
-                import traceback
-                error_msg = f"[wiki-auto] Fetch failed (continuing anyway): {e}"
-                print(error_msg, file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-                # Also show in GUI status
-                self.update_status(f"Wiki fetch failed: {str(e)[:50]}...")
+        # NEW SYSTEM: Streaming RAG automatically fetches context in real-time
+        # No need for pre-fetching - it happens during streaming
         
         self.history.append(Message(role="user", content=user_input))
         
@@ -4058,26 +4053,31 @@ class KiwixRAGGUI:
                 )
                 system_prompt_to_use = self.system_prompt + omnifetch_instruction
         
-        messages = build_messages(system_prompt_to_use, self.history, user_query=user_input)
+        # USE ITERATIVE RAG SYSTEM (or fallback to streaming RAG)
+        from kiwix_chat.kiwix.client import get_current_zim_file_path
         
-        # Debug: Verify conversation messages are included
-        conversation_count = sum(1 for m in messages if m.get("role") in ["user", "assistant"])
-        import sys
-        print(f"[DEBUG] Sending {len(messages)} total messages: {conversation_count} conversation messages", file=sys.stderr)
-        if conversation_count > 0:
-            # Print last few conversation messages for verification
-            conv_msgs = [m for m in messages if m.get("role") in ["user", "assistant"]]
-            print(f"[DEBUG] Last 3 conversation messages:", file=sys.stderr)
-            for msg in conv_msgs[-3:]:
-                role = msg.get("role", "unknown")
-                content_preview = msg.get("content", "")[:50]
-                print(f"[DEBUG]   {role}: {content_preview}...", file=sys.stderr)
-        if conversation_count == 0:
-            print(f"[WARNING] No conversation messages found in {len(messages)} total messages!", file=sys.stderr)
-            print(f"[DEBUG] History has {len(self.history)} messages", file=sys.stderr)
-            print(f"[DEBUG] Conversation messages in history: {sum(1 for m in self.history if m.role in ['user', 'assistant'])}", file=sys.stderr)
+        zim_file_path = get_current_zim_file_path()
+        if not zim_file_path:
+            self.update_status("No ZIM file found")
+            self.append_message("system", "[ERROR] No ZIM file found. Place a .zim file in the app folder.")
+            return
         
-        self.update_status("Thinking...")
+        # Convert history to dict format for RAG
+        conversation_history = []
+        for msg in self.history:
+            if msg.role in ["user", "assistant"]:
+                conversation_history.append({"role": msg.role, "content": msg.content})
+        
+        # Use iterative RAG if enabled, otherwise use streaming RAG
+        if self.use_iterative_rag:
+            self.update_status("Thinking (Iterative RAG with verification)...")
+            from kiwix_chat.rag.iterative_rag import iterative_rag_query
+            rag_query_func = iterative_rag_query
+        else:
+            self.update_status("Thinking (Streaming RAG)...")
+            from kiwix_chat.rag.streaming_rag import simple_rag_query
+            rag_query_func = simple_rag_query
+        
         self.root.update()
         
         try:
@@ -4095,19 +4095,21 @@ class KiwixRAGGUI:
             self.chat_display.insert(self.tk.END, "AI: ", ai_tag_name)
             start_pos = self.chat_display.index(self.tk.END + "-1c")
             
-            if self.streaming_enabled:
-                accumulated: List[str] = []
-                for chunk in stream_chat(self.model, messages):
-                    accumulated.append(chunk)
-                    # Insert with the tag so styling appears immediately
-                    self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
-                    self.chat_display.see(self.tk.END)
-                    self.root.update()
-                assistant_reply = "".join(accumulated)
-            else:
-                assistant_reply = full_chat(self.model, messages)
+            # USE RAG SYSTEM - REAL-TIME STREAMING
+            accumulated: List[str] = []
+            for chunk in rag_query_func(
+                self.model,
+                user_input,
+                zim_file_path,
+                conversation_history,
+                system_prompt_to_use
+            ):
+                accumulated.append(chunk)
                 # Insert with the tag so styling appears immediately
-                self.chat_display.insert(self.tk.END, assistant_reply, ai_tag_name)
+                self.chat_display.insert(self.tk.END, chunk, ai_tag_name)
+                self.chat_display.see(self.tk.END)
+                self.root.update()
+            assistant_reply = "".join(accumulated)
             
             # Mark end of AI message for border tag (before entity tagging)
             ai_message_end = self.chat_display.index(self.tk.END + "-1c")
@@ -4127,28 +4129,29 @@ class KiwixRAGGUI:
                     self.root.update()
 
                     try:
-                        # Use intelligent wiki fetch for the requested topic
-                        result = intelligent_wiki_fetch(
-                            self.model,
-                            topic,
-                            max_chars_per_article=self.wiki_max_chars,
-                            max_total_chars=self.wiki_max_chars * 2,
-                            use_rag=self.use_rag
-                        )
-                        if result:
-                            ctx, found_articles, _ = result
-                            articles_str = ", ".join(found_articles)
-                            # Add the fetched context to history for the AI to use
-                            self.history.append(Message(
-                                role="system",
-                                content=f"ADDITIONAL WIKIPEDIA CONTEXT (requested by AI for '{topic}'):\n{ctx}"
-                            ))
-                            self.chat_display.insert(self.tk.END, f"[wiki-tool] Context added: {articles_str}\n")
+                        # Use RAG system for the requested topic
+                        from kiwix_chat.kiwix.client import get_current_zim_file_path
+                        if self.use_iterative_rag:
+                            from kiwix_chat.rag.iterative_rag import iterative_rag_query as rag_query_func
+                        else:
+                            from kiwix_chat.rag.streaming_rag import simple_rag_query as rag_query_func
+                        
+                        zim_file_path = get_current_zim_file_path()
+                        if zim_file_path:
+                            # Convert history to dict format
+                            conv_hist = []
+                            for msg in self.history:
+                                if msg.role in ["user", "assistant"]:
+                                    conv_hist.append({"role": msg.role, "content": msg.content})
+                            
+                            # Stream response for the topic
+                            self.chat_display.insert(self.tk.END, f"[wiki-tool] Fetching and streaming: {topic}\n")
                             self.chat_display.see(self.tk.END)
                             self.root.update()
-
-                            # Regenerate response with the new context
-                            self.chat_display.insert(self.tk.END, "[wiki-tool] Regenerating response with new context...\n")
+                            
+                            # The streaming RAG will automatically fetch and use the context
+                            # No need to manually add to history - it's handled in the stream
+                            self.chat_display.insert(self.tk.END, "[wiki-tool] Context will be used in next response\n")
                             self.chat_display.see(self.tk.END)
                             self.root.update()
 
@@ -4265,7 +4268,6 @@ def main() -> int:
         
         # ZIM file status
         if zim_file_path:
-            import os
             zim_name = os.path.basename(zim_file_path)
             zim_size = os.path.getsize(zim_file_path) / (1024**3)  # GB
             print(f"\nZIM File:", file=sys.stderr)
@@ -4424,7 +4426,8 @@ def main() -> int:
                 recursive_wiki=args.recursive_wiki,
                 max_recursive_iterations=args.max_recursive_iterations,
                 no_auto_wiki=args.no_auto_wiki,
-                use_rag=args.use_rag
+                use_rag=args.use_rag,
+                use_iterative_rag=args.iterative_rag
             )
             gui.run()
             return 0
@@ -4434,6 +4437,7 @@ def main() -> int:
 
     # Terminal mode (only if --terminal flag is set)
     use_rag_flag = args.use_rag
+    use_iterative_rag_flag = args.iterative_rag
     history: List[Message] = []
     recent_entities: Dict[int, str] = {}  # Track entities by number for /view N
     entity_counter = 0
@@ -4816,7 +4820,8 @@ def main() -> int:
             system_prompt=system_prompt_to_use,
             wiki_context=wiki_context,
             streaming_enabled=streaming_enabled,
-            max_attempts=3
+            max_attempts=3,
+            use_iterative_rag=use_iterative_rag_flag
         )
         
         assistant_reply = result['response']

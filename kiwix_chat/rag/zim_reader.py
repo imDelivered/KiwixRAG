@@ -30,12 +30,15 @@ def list_zim_articles(zim_file_path: str) -> Iterator[Tuple[str, str]]:
     # Strategy: Search for common patterns to discover articles
     # This is a limitation - we'll get a subset of articles, not all
     
-    # Try searching for common single letters/patterns
+    # Try searching for common single letters/patterns (Latin alphabet)
+    # For non-Latin scripts, we rely on sitemap.xml which should work for all languages
     search_patterns = [
         "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
         "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
         "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
     ]
+    # Note: For non-Latin scripts (Chinese, Arabic, etc.), the sitemap.xml approach below
+    # should discover articles. The search patterns above are just for Latin-script content.
     
     seen_hrefs = set()
     

@@ -2,6 +2,11 @@
 *.zim
 wiki
 
+# RAG index directories (generated, user-specific)
+*_rag_index/
+*.sqlite3
+*.pickle
+
 # AI model files and directory - don't commit these
 models/
 *.gguf
@@ -32,6 +37,7 @@ build/
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -39,4 +45,8 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+/tmp/
 

@@ -5,8 +5,13 @@ from typing import List, Optional
 
 # Lazy-loaded model
 _embedding_model = None
-# Using BGE (BAAI General Embedding) model - same as Perplexica uses
-# Options: "BAAI/bge-base-en-v1.5" (base, ~110MB) or "BAAI/bge-large-en-v1.5" (large, ~1.3GB)
+# Using BGE (BAAI General Embedding) model
+# Default: English model, but works reasonably well with other languages
+# For better multilingual support, consider: "BAAI/bge-m3" (multilingual, ~420MB)
+# Options: 
+#   - "BAAI/bge-base-en-v1.5" (English, ~110MB) - default, works with any ZIM
+#   - "BAAI/bge-large-en-v1.5" (English, ~1.3GB) - better quality
+#   - "BAAI/bge-m3" (Multilingual, ~420MB) - best for non-English ZIM files
 _embedding_model_name = "BAAI/bge-base-en-v1.5"
 
 
