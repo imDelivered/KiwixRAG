@@ -2772,16 +2772,20 @@ class KiwixRAGGUI:
             "leave": lambda e: self.chat_display.config(cursor="")
         }
         
-        # Input frame
-        input_frame = self.ttk.Frame(self.root)
-        input_frame.pack(fill=self.tk.X, padx=15, pady=(5, 15))
+        # Input container to center the input frame
+        input_container = self.ttk.Frame(self.root)
+        input_container.pack(fill=self.tk.X, pady=(5, 10))
+        
+        # Input frame (centered, shorter width)
+        input_frame = self.ttk.Frame(input_container)
+        input_frame.pack(anchor=self.tk.CENTER)
         
         self.input_entry = self.tk.Entry(
             input_frame, font=("Arial", 12), 
             relief=self.tk.FLAT, borderwidth=0,
-            highlightthickness=1
+            highlightthickness=1, width=50
         )
-        self.input_entry.pack(side=self.tk.LEFT, fill=self.tk.X, expand=True, padx=(0, 10), ipady=4)
+        self.input_entry.pack(side=self.tk.LEFT, padx=(0, 5), ipady=4)
         self.input_entry.bind("<Return>", self.on_input_return)
         self.input_entry.bind("<KeyRelease>", self.on_input_key)
         self.input_entry.bind("<Up>", self.on_autocomplete_nav)
@@ -2792,13 +2796,13 @@ class KiwixRAGGUI:
         
         # Autocomplete listbox (initially hidden)
         self.autocomplete_listbox = self.tk.Listbox(
-            self.root, height=5, font=("Arial", 10), 
-            borderwidth=1, relief=self.tk.SOLID
+            self.root, height=5, font=("Arial", 11), 
+            borderwidth=1, relief=self.tk.SOLID,
+            activestyle="none"
         )
         self.autocomplete_listbox.bind("<Button-1>", self.on_autocomplete_click)
         self.autocomplete_listbox.bind("<Return>", self.on_autocomplete_select)
-        # Keep autocomplete visible when clicking on it
-        self.autocomplete_listbox.bind("<Enter>", lambda e: self.autocomplete_listbox.focus_set())
+        # Don't steal focus when hovering over autocomplete - keep input focused
         
         # Auto-focus input entry when window is ready
         self.root.after(100, lambda: self.input_entry.focus_set())
@@ -2806,27 +2810,63 @@ class KiwixRAGGUI:
         self.autocomplete_suggestions: List[str] = []
         self.autocomplete_selected_index = -1
         
-        self.send_btn = self.ttk.Button(input_frame, text="Send", command=self.on_send, style="Accent.TButton")
-        self.send_btn.pack(side=self.tk.RIGHT)
+        # Create triangle send button using Canvas (outlined triangle, no fill)
+        send_canvas = self.tk.Canvas(
+            input_frame, width=32, height=32,
+            highlightthickness=0, borderwidth=0,
+            relief=self.tk.FLAT
+        )
+        send_canvas.pack(side=self.tk.RIGHT)
         
-        self.clear_btn = self.ttk.Button(input_frame, text="Clear", command=self.on_clear)
-        self.clear_btn.pack(side=self.tk.RIGHT, padx=(0, 5))
+        # Store canvas reference and colors
+        self.send_canvas = send_canvas
+        self.send_canvas_color = "#808080"  # Will be updated in apply_theme (matches border_color)
+        self.send_canvas_hover_color = "#FFFFFF"  # Will be updated in apply_theme
         
-        # Status bar
-        self.status_label = self.ttk.Label(self.root, text="Ready", relief=self.tk.FLAT, anchor=self.tk.W)
-        self.status_label.pack(fill=self.tk.X, side=self.tk.BOTTOM, padx=5, pady=2)
+        # Draw function for outlined triangle (no fill, clean rendering)
+        def draw_send_button(canvas, triangle_color):
+            canvas.delete("all")
+            # Draw triangle outline pointing right: left, top-right, bottom-right
+            # Use cleaner coordinates and thin line for crisp appearance
+            points = [9.5, 7.5, 9.5, 24.5, 24.5, 16]
+            canvas.create_polygon(points, fill="", outline=triangle_color, width=1)
+        
+        # Draw initial button
+        draw_send_button(send_canvas, self.send_canvas_color)
+        
+        # Make canvas clickable with hover effect
+        def on_send_click(event):
+            self.on_send()
+        
+        def on_send_enter(event):
+            send_canvas.config(cursor="hand2")
+            # Lighten color on hover
+            draw_send_button(send_canvas, self.send_canvas_hover_color)
+        
+        def on_send_leave(event):
+            send_canvas.config(cursor="")
+            # Restore original color
+            draw_send_button(send_canvas, self.send_canvas_color)
+        
+        send_canvas.bind("<Button-1>", on_send_click)
+        send_canvas.bind("<Enter>", on_send_enter)
+        send_canvas.bind("<Leave>", on_send_leave)
+        
+        # Store draw function for theme updates
+        self._draw_send_button = draw_send_button
+        
+        # Status bar removed for minimal design
+        self.status_label = None
         
         # Track selection for highlight+Enter
         self.selected_text = ""
         
         # Apply initial theme
         self.apply_theme()
-        
-        self.update_status("Ready - Click concepts to explore, highlight+Enter to query, Ctrl+Click for word selection")
     
     def update_status(self, text: str):
-        """Update status bar."""
-        self.status_label.config(text=text)
+        """Update status bar (no-op for minimal UI)."""
+        pass  # Status bar removed for minimal design
     
     def get_installed_models(self) -> List[Tuple[str, ModelPlatform]]:
         """Get list of installed Ollama models.
@@ -3047,9 +3087,9 @@ class KiwixRAGGUI:
         
         if self.dark_mode:
             # Modern Dark Theme
-            bg_color = "#000000"      # Pure Black Background
+            bg_color = "#2A2A2A"      # Dark Grey Background
             fg_color = "#E0E0E0"      # Light Gray Text
-            input_bg = "#121212"      # Very dark gray for input
+            input_bg = "#1E1E1E"      # Darker grey for input
             input_fg = "#FFFFFF"
             accent_color = "#808080"  # Gray Accent (Neutral)
             button_bg = "#333333"
@@ -3119,7 +3159,7 @@ class KiwixRAGGUI:
         
         # Configure Chat Display (Standard Tkinter Widget)
         self.chat_display.configure(
-            bg=input_bg, 
+            bg=bg_color, 
             fg=fg_color, 
             insertbackground=fg_color,
             selectbackground=accent_color,
@@ -3127,8 +3167,9 @@ class KiwixRAGGUI:
         )
         
         # Configure Input Entry (Standard Tkinter Widget)
+        # Use background color so only outline is visible
         self.input_entry.configure(
-            bg=input_bg, 
+            bg=bg_color, 
             fg=input_fg, 
             insertbackground=fg_color,
             highlightbackground=border_color,
@@ -3144,8 +3185,19 @@ class KiwixRAGGUI:
             selectbackground=accent_color, 
             selectforeground="#FFFFFF",
             highlightthickness=1,
-            highlightbackground=border_color
+            highlightbackground=border_color,
+            borderwidth=1,
+            relief=self.tk.SOLID
         )
+        
+        # Update triangle send button color (match border color like input box)
+        if hasattr(self, 'send_canvas') and hasattr(self, '_draw_send_button'):
+            self.send_canvas_color = border_color  # Match input box outline color
+            # Hover color: lighter in dark mode, darker in light mode
+            self.send_canvas_hover_color = "#FFFFFF" if self.dark_mode else "#000000"
+            # Redraw button as outlined triangle
+            self._draw_send_button(self.send_canvas, self.send_canvas_color)
+            self.send_canvas.configure(bg=bg_color)
         
         # Update concept colors for existing tags
         for tag in self.chat_display.tag_names():
@@ -3158,8 +3210,8 @@ class KiwixRAGGUI:
     def _configure_message_tag(self, tag_name: str, role: str):
         """Configure styling for message border tags."""
         if self.dark_mode:
-            # Dark mode: subtle dark gray border background
-            border_bg = "#2C2C2C"  # Lighter than background for contrast
+            # Dark mode: darker gray for message bubbles (darker than main background)
+            border_bg = "#1E1E1E"  # Darker than background for message bubbles
         else:
             # Light mode: light gray border background
             border_bg = "#E0E0E0"  # Light gray border
@@ -3234,17 +3286,35 @@ class KiwixRAGGUI:
         
         # Position listbox below input entry (relative to root)
         entry_x = self.input_entry.winfo_rootx() - self.root.winfo_rootx()
-        entry_y = self.input_entry.winfo_rooty() - self.root.winfo_rooty() + self.input_entry.winfo_height()
+        entry_y = self.input_entry.winfo_rooty() - self.root.winfo_rooty() + self.input_entry.winfo_height() + 2
         
+        # Get input frame to calculate proper width (excluding send button)
+        input_frame = self.input_entry.master
         listbox_width = self.input_entry.winfo_width()
-        listbox_height = min(120, len(suggestions) * 20 + 4)  # ~20px per item
+        listbox_height = min(150, max(25, len(suggestions) * 22 + 4))  # ~22px per item, min 25px
+        
+        # Ensure listbox stays on screen
+        root_width = self.root.winfo_width()
+        root_height = self.root.winfo_height()
+        
+        # Only adjust if we have valid window dimensions
+        if root_width > 100 and root_height > 100:
+            # Adjust x if listbox would go off right edge
+            if entry_x + listbox_width > root_width - 10:
+                entry_x = max(10, root_width - listbox_width - 10)
+            
+            # Adjust y if listbox would go off bottom edge
+            if entry_y + listbox_height > root_height - 10:
+                entry_y = max(10, entry_y - self.input_entry.winfo_height() - listbox_height - 2)  # Show above instead
         
         self.autocomplete_listbox.place(
             x=entry_x, y=entry_y,
             width=listbox_width, height=listbox_height
         )
-        # Raise listbox above other widgets
+        # Raise listbox above other widgets but don't steal focus
         self.autocomplete_listbox.lift()
+        # Keep focus on input entry so user can keep typing
+        self.input_entry.focus_set()
         self.autocomplete_active = True
         self.autocomplete_selected_index = -1
     
@@ -3373,7 +3443,8 @@ class KiwixRAGGUI:
     def _check_focus_for_autocomplete(self):
         """Check if focus is on autocomplete listbox, otherwise hide autocomplete."""
         focused_widget = self.root.focus_get()
-        if focused_widget != self.autocomplete_listbox:
+        # Only hide if focus moved away from both input and listbox (e.g., clicked elsewhere)
+        if focused_widget != self.autocomplete_listbox and focused_widget != self.input_entry:
             self.hide_autocomplete()
     
     def append_message(self, role: str, content: str, is_concept: bool = False):
