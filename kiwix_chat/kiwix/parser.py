@@ -74,3 +74,4 @@ class KiwixSearchParser(HTMLParser):
             self.in_link = False
             self.current_href = None
 
+

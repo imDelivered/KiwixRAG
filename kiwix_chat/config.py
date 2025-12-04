@@ -60,3 +60,4 @@ def detect_platform(model_name: str, explicit_platform: Optional[ModelPlatform] 
     # Default to Ollama
     return ModelPlatform.OLLAMA
 
+

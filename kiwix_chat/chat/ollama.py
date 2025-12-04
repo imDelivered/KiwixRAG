@@ -82,3 +82,4 @@ def full_chat(model: str, messages: List[dict]) -> str:
     """
     return ollama_full_chat(model, messages)
 
+

@@ -209,3 +209,4 @@ def index_article(
         vector_store = get_vector_store(zim_file_path)
         vector_store.add_chunks(chunks)
 
+

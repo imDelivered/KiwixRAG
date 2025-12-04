@@ -92,8 +92,19 @@ class DynamicContextManager:
         if not text:
             return self.get_state()
         
-        # Append to generated text
+        # Append to generated text (limit size to prevent unbounded growth)
         self.generated_text += text
+        # Keep only last 20KB to prevent memory bloat (enough for semantic similarity)
+        MAX_GENERATED_TEXT_SIZE = 20000
+        if len(self.generated_text) > MAX_GENERATED_TEXT_SIZE:
+            # Keep last portion, preserving sentence boundaries
+            truncated = self.generated_text[-MAX_GENERATED_TEXT_SIZE:]
+            # Try to start at sentence boundary
+            first_period = truncated.find('.')
+            if first_period > 0 and first_period < 1000:  # Don't lose too much
+                self.generated_text = truncated[first_period+1:].strip()
+            else:
+                self.generated_text = truncated
         
         # Update sentence tracking (keep last 3 sentences for query expansion)
         sentences = self._extract_sentences(text)

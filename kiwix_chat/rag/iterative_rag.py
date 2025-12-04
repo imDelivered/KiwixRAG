@@ -110,6 +110,7 @@ Source material:
     sentence_buffer = ""
     pending_output = ""  # Text that's been verified and ready to yield
     verified_output = ""  # All verified output so far (for internal contradiction checking)
+    MAX_VERIFIED_OUTPUT_SIZE = 50000  # Limit verified_output to prevent unbounded growth
     retrieval_cycle_count = 0
     last_context_update_length = 0
     contradiction_count = 0  # Track number of contradictions (tolerance system)
@@ -240,6 +241,10 @@ Source material:
                 if verification.is_verified and not has_major_contradiction and not has_internal_contradiction:
                     pending_output += sentence.strip() + ". "
                     verified_output += sentence.strip() + ". "  # Track verified output
+                    # Limit verified_output size to prevent unbounded growth
+                    if len(verified_output) > MAX_VERIFIED_OUTPUT_SIZE:
+                        # Keep last portion for contradiction checking
+                        verified_output = verified_output[-MAX_VERIFIED_OUTPUT_SIZE:]
                 elif has_major_contradiction or has_internal_contradiction:
                     # Block contradictory sentences
                     print(f"[iterative-rag] ⛔ BLOCKED contradictory sentence: {sentence[:100]}...", file=sys.stderr)
@@ -333,6 +338,9 @@ Source material:
         if verification.is_verified and not has_contradiction:
             pending_output += sentence_buffer.strip()
             verified_output += sentence_buffer.strip()
+            # Limit verified_output size
+            if len(verified_output) > MAX_VERIFIED_OUTPUT_SIZE:
+                verified_output = verified_output[-MAX_VERIFIED_OUTPUT_SIZE:]
         elif has_contradiction:
             print(f"[iterative-rag] ⛔ BLOCKED final sentence due to contradiction", file=sys.stderr)
         
