@@ -4162,8 +4162,9 @@ class KiwixRAGGUI:
                         else:
                             # RAG unavailable - no fallback
                             self.chat_display.insert(self.tk.END, f"[rag] RAG unavailable for '{topic}'. Build index with: --build-index\n")
-
-                                # Regenerate response with the new context
+                            self.chat_display.see(self.tk.END)
+                            self.root.update()
+                            # Skip regeneration since we have no context
                                 messages = build_messages(self.system_prompt, self.history, user_query=user_input)
                                 if self.streaming_enabled:
                                     accumulated = []
