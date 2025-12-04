@@ -35,15 +35,38 @@ echo "✓ Python $PYTHON_VERSION installed"
 
 # Step 3: Install Python dependencies
 echo "[3/6] Installing Python dependencies..."
+echo "  This may take a few minutes (downloading ~200MB of packages)..."
+echo "  Installing: requests, sentence-transformers, chromadb"
 # Try --user first, fall back to --break-system-packages if needed
-if ! python3 -m pip install --user requests sentence-transformers chromadb > /dev/null 2>&1; then
-    echo "  Note: Using --break-system-packages flag (externally-managed-environment detected)"
-    python3 -m pip install --break-system-packages requests sentence-transformers chromadb > /dev/null 2>&1 || {
-        echo "  Warning: Failed to install some dependencies. You may need to install manually:"
-        echo "    pip3 install --break-system-packages sentence-transformers chromadb"
-    }
+INSTALL_SUCCESS=false
+if python3 -m pip install --user requests sentence-transformers chromadb 2>&1; then
+    INSTALL_SUCCESS=true
+    echo "  ✓ Installed with --user flag"
+else
+    echo "  Note: --user install failed, trying --break-system-packages..."
+    if python3 -m pip install --break-system-packages requests sentence-transformers chromadb 2>&1; then
+        INSTALL_SUCCESS=true
+        echo "  ✓ Installed with --break-system-packages flag"
+    fi
 fi
-echo "✓ Python dependencies installed (including RAG dependencies: sentence-transformers, chromadb)"
+
+if [ "$INSTALL_SUCCESS" = false ]; then
+    echo ""
+    echo "  ❌ ERROR: Failed to install dependencies!"
+    echo "  Please install manually:"
+    echo "    pip3 install --break-system-packages sentence-transformers chromadb"
+    echo ""
+    echo "  Or if that fails, try:"
+    echo "    pip3 install --user sentence-transformers chromadb"
+    exit 1
+fi
+
+# Verify installation
+if python3 -c "import chromadb; import sentence_transformers" 2>/dev/null; then
+    echo "✓ Python dependencies installed and verified (sentence-transformers, chromadb)"
+else
+    echo "⚠️  Warning: Dependencies installed but verification failed. They may still work."
+fi
 
 # Step 4: Install Ollama
 echo "[4/6] Installing Ollama..."

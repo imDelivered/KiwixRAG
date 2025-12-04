@@ -125,7 +125,17 @@ fi
 
 # Pull model if missing
 if ! ollama list | awk '{print $1}' | grep -qx "llama3.2:1b"; then
+  echo "Downloading AI model (llama3.2:1b, ~1.3GB)..."
   ollama pull llama3.2:1b
+fi
+
+# Check if RAG dependencies are installed
+if ! python3 -c "import chromadb" 2>/dev/null; then
+  echo ""
+  echo "⚠️  WARNING: chromadb not installed. RAG features will not work."
+  echo "   Install with: pip3 install --break-system-packages chromadb"
+  echo "   Or run setup.sh again to install all dependencies."
+  echo ""
 fi
 
 # Pass all arguments (including --zim-file if provided) to Python script

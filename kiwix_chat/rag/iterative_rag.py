@@ -53,8 +53,15 @@ def stream_iterative_rag_response(
     try:
         vector_store = get_vector_store(zim_file_path)
         retriever = RAGRetriever(zim_file_path, vector_store)
+    except ImportError as e:
+        print(f"[iterative-rag] ERROR: RAG dependencies not installed: {e}", file=sys.stderr)
+        print(f"[iterative-rag] Install with: pip3 install --break-system-packages chromadb sentence-transformers", file=sys.stderr)
+        print(f"[iterative-rag] Falling back to normal generation (no RAG)", file=sys.stderr)
+        yield from ollama_stream_chat(model, messages)
+        return
     except Exception as e:
-        print(f"[iterative-rag] Error initializing retriever: {e}, falling back to normal generation", file=sys.stderr)
+        print(f"[iterative-rag] Error initializing retriever: {e}", file=sys.stderr)
+        print(f"[iterative-rag] Falling back to normal generation (no RAG)", file=sys.stderr)
         yield from ollama_stream_chat(model, messages)
         return
     
