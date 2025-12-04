@@ -277,7 +277,7 @@ sudo apt install -y python3-tk
 python3 -c "import tkinter; print('OK')"
 ```
 
-## System Requirements
+## System Requirements (depends on the model you use)
 
 **Platform:** Linux only (Windows and macOS support coming in the future)
 
