@@ -1510,9 +1510,20 @@ def intelligent_wiki_fetch(model: str, user_query: str, max_chars_per_article: i
             elif not is_indexed(zim_file_path):
                 import os
                 zim_name = os.path.basename(zim_file_path)
-                print(f"[rag] ERROR: No vector index found for '{zim_name}'.", file=sys.stderr)
-                print(f"[rag] To enable RAG: Build index with: python3 kiwix_chat.py --build-index", file=sys.stderr)
-                print(f"[rag] This will create embeddings for semantic search (one-time setup, may take time).", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("=" * 70, file=sys.stderr)
+                print(f"[rag] ERROR: No vector index found for '{zim_name}'", file=sys.stderr)
+                print("=" * 70, file=sys.stderr)
+                print("[rag] RAG SYSTEM REQUIRED: The system cannot retrieve precise information without the vector index.", file=sys.stderr)
+                print("[rag] Without RAG, the system cannot use semantic search to find accurate, specific content.", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("[rag] TO ENABLE RAG (REQUIRED):", file=sys.stderr)
+                print("[rag]   python3 kiwix_chat.py --build-index", file=sys.stderr)
+                print("", file=sys.stderr)
+                print("[rag] This creates embeddings for semantic search (one-time setup, may take time).", file=sys.stderr)
+                print("[rag] The system will NOT function properly until the index is built.", file=sys.stderr)
+                print("=" * 70, file=sys.stderr)
+                print("", file=sys.stderr)
                 return None
             else:
                 # Index exists, use RAG
