@@ -3886,15 +3886,9 @@ class KiwixRAGGUI:
                             content_type = _get_content_type_description()
                             self.update_status(f"{content_type} context added: {articles_str}")
                         else:
-                            # Fallback to simple search
-                            result = kiwix_fetch_article(query, self.wiki_max_chars)
-                            if result:
-                                ctx = result[0]
-                                self.history.append(Message(role="system", content=f"Wikipedia context for '{query}':\n{ctx}"))
-                                self.update_status(f"Wikipedia context added for '{query}'")
-                            else:
-                                content_type = _get_content_type_description()
-                                self.update_status(f"{content_type} not found for '{query}'")
+                            # RAG unavailable - no fallback
+                            content_type = _get_content_type_description()
+                            self.update_status(f"RAG unavailable for '{query}'. Build index with: --build-index")
                 except Exception as e:
                     # Show error and fallback
                     import traceback
@@ -4166,15 +4160,8 @@ class KiwixRAGGUI:
                             self.chat_display.see(self.tk.END)
                             self.root.update()
                         else:
-                            # Fallback to simple search
-                            result = kiwix_fetch_article(topic, self.wiki_max_chars)
-                            if result:
-                                ctx = result[0]
-                                self.history.append(Message(
-                                    role="system",
-                                    content=f"ADDITIONAL WIKIPEDIA CONTEXT (requested by AI for '{topic}'):\n{ctx}"
-                                ))
-                                self.chat_display.insert(self.tk.END, "[wiki-tool] Context added (fallback)\n")
+                            # RAG unavailable - no fallback
+                            self.chat_display.insert(self.tk.END, f"[rag] RAG unavailable for '{topic}'. Build index with: --build-index\n")
 
                                 # Regenerate response with the new context
                                 messages = build_messages(self.system_prompt, self.history, user_query=user_input)
@@ -4657,24 +4644,11 @@ def main() -> int:
                             history.append(Message(role="system", content=f"SOURCES: {json.dumps(sources)}"))
                         print(f"[wiki] context added: {articles_str}")
                     else:
-                        # Fallback to simple search
-                        result = kiwix_fetch_article(query, wiki_max_chars)
-                        if result:
-                            ctx = result[0]
-                            history.append(Message(role="system", content=f"Wikipedia context for '{query}':\n{ctx}"))
-                            print("[wiki] context added to conversation")
-                        else:
-                            print("[wiki] no result")
+                        # RAG unavailable - no fallback
+                        print("[rag] RAG unavailable. Build index with: --build-index")
             except Exception as e:
                 print(f"[error] Fetch failed: {e}")
-                # Fallback to simple search
-                result = kiwix_fetch_article(query, wiki_max_chars)
-                if result:
-                    ctx = result[0]
-                    history.append(Message(role="system", content=f"Wikipedia context for '{query}':\n{ctx}"))
-                    print("[wiki] context added to conversation (fallback)")
-                else:
-                    print("[wiki] no result")
+                print("[rag] RAG unavailable. Build index with: --build-index")
             continue
 
         if user_input.lower().startswith("/view "):
@@ -4893,15 +4867,8 @@ def main() -> int:
                         assistant_reply = result['response']
                         print("[wiki-tool] Response regenerated with Wikipedia data")
                     else:
-                        # Fallback to simple search
-                        result = kiwix_fetch_article(topic, wiki_max_chars)
-                        if result:
-                            ctx = result[0]
-                            history.append(Message(
-                                role="system",
-                                content=f"ADDITIONAL WIKIPEDIA CONTEXT (requested by AI for '{topic}'):\n{ctx}"
-                            ))
-                            print("[wiki-tool] Context added (fallback)")
+                        # RAG unavailable - no fallback
+                        print(f"[rag] RAG unavailable for '{topic}'. Build index with: --build-index")
 
                             # Regenerate response with the new context
                             result = generate_response_with_regeneration(
