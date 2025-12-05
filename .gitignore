@@ -50,3 +50,31 @@ Thumbs.db
 *.log
 /tmp/
 
+# User-specific files and personal notes
+SYSTEM_ARCHITECTURE.md
+*.md.bak
+*.notes
+*.todo
+
+# ChromaDB and vector store data
+chroma.sqlite3
+*.sqlite3
+metadata.json
+
+# Cache files
+kiwix_cache.db
+*.cache
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Environment and secrets
+.env
+.env.local
+*.key
+*.pem
+secrets.json
+config.local.json
+
