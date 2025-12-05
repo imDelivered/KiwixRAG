@@ -1,4 +1,4 @@
-# Kiwix RAG
+# Kiwix RAG (work in progress)
 
 Universal terminal chat app for Ollama with local Kiwix content integration. Features Retrieval Augmented Generation (RAG) for enhanced factual responses.
 
