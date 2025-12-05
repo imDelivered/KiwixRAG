@@ -92,11 +92,6 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
 
 ### Installation Steps
 
-**Step 1: Clone or download this repository**
-```bash
-cd /path/to/kiwixrag
-```
-
 **Step 2: Run the setup script**
 ```bash
 chmod +x setup.sh
