@@ -118,16 +118,72 @@ else
 fi
 
 # Step 6: Make scripts executable
-echo "[6/6] Setting up scripts..."
+echo "[6/7] Setting up scripts..."
 chmod +x run_kiwix_chat.sh 2>/dev/null || true
 chmod +x setup.sh 2>/dev/null || true
 echo "✓ Scripts made executable"
 
+# Step 7: Install krag command
+echo "[7/7] Installing krag command..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KRAG_WRAPPER="/usr/local/bin/krag"
+
+# Create wrapper script that finds and runs run_kiwix_chat.sh
+# Use double quotes for heredoc to allow variable expansion
+sudo tee "$KRAG_WRAPPER" > /dev/null << KRAG_EOF
+#!/usr/bin/env bash
+# krag command wrapper - finds project directory and runs run_kiwix_chat.sh
+
+# Installation directory (set during setup)
+INSTALL_DIR="$SCRIPT_DIR"
+
+# Check if installation directory still exists and is valid
+if [ -f "\$INSTALL_DIR/run_kiwix_chat.sh" ] && [ -f "\$INSTALL_DIR/kiwix_chat.py" ]; then
+    PROJECT_DIR="\$INSTALL_DIR"
+else
+    # Search for project directory in common locations
+    PROJECT_DIR=""
+    for dir in "\$HOME" "\$HOME/OWRs-main" "\$HOME/OWRs" "/opt/kiwix-rag"; do
+        if [ -f "\$dir/run_kiwix_chat.sh" ] && [ -f "\$dir/kiwix_chat.py" ]; then
+            PROJECT_DIR="\$dir"
+            break
+        fi
+    done
+    
+    # If not found, try searching from current directory up
+    if [ -z "\$PROJECT_DIR" ]; then
+        CURRENT_DIR="\$(pwd)"
+        while [ "\$CURRENT_DIR" != "/" ]; do
+            if [ -f "\$CURRENT_DIR/run_kiwix_chat.sh" ] && [ -f "\$CURRENT_DIR/kiwix_chat.py" ]; then
+                PROJECT_DIR="\$CURRENT_DIR"
+                break
+            fi
+            CURRENT_DIR="\$(dirname "\$CURRENT_DIR")"
+        done
+    fi
+fi
+
+if [ -z "\$PROJECT_DIR" ]; then
+    echo "Error: Could not find Kiwix RAG project directory."
+    echo "Please navigate to the project directory or run: ./run_kiwix_chat.sh"
+    exit 1
+fi
+
+# Execute the launcher script
+exec "\$PROJECT_DIR/run_kiwix_chat.sh" "\$@"
+KRAG_EOF
+
+sudo chmod +x "$KRAG_WRAPPER"
+echo "✓ krag command installed to /usr/local/bin/krag"
+
 echo ""
 echo "=== Setup Complete! ==="
 echo ""
-echo "Everything is ready! Just run:"
+echo "Everything is ready! You can now run:"
 echo ""
+echo "  krag"
+echo ""
+echo "Or from the project directory:"
 echo "  ./run_kiwix_chat.sh"
 echo ""
 echo "The launcher will automatically:"
@@ -135,6 +191,8 @@ echo "  • Start Ollama server"
 echo "  • Download the AI model (if needed)"
 echo "  • Start Kiwix server (if ZIM file found)"
 echo "  • Launch the chat interface"
+echo ""
+echo "The 'krag' command is now available system-wide from any directory!"
 echo ""
 echo "RAG System Setup:"
 echo "  • Embedding models (BGE) are ready to use"
