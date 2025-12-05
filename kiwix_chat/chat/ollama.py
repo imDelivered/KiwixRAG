@@ -8,9 +8,9 @@ from urllib.request import Request, urlopen
 from kiwix_chat.config import OLLAMA_CHAT_URL
 
 
-def ollama_stream_chat(model: str, messages: List[dict]) -> Iterable[str]:
+def ollama_stream_chat(model: str, messages: List[dict], temperature: float = 0.1) -> Iterable[str]:
     """Stream chat with Ollama model."""
-    payload = json.dumps({"model": model, "messages": messages, "stream": True}).encode("utf-8")
+    payload = json.dumps({"model": model, "messages": messages, "stream": True, "options": {"temperature": temperature}}).encode("utf-8")
     req = Request(OLLAMA_CHAT_URL, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
     try:
@@ -36,9 +36,9 @@ def ollama_stream_chat(model: str, messages: List[dict]) -> Iterable[str]:
         raise RuntimeError(f"Cannot reach Ollama at {OLLAMA_CHAT_URL}: {e.reason}") from e
 
 
-def ollama_full_chat(model: str, messages: List[dict]) -> str:
+def ollama_full_chat(model: str, messages: List[dict], temperature: float = 0.1) -> str:
     """Full chat with Ollama model."""
-    payload = json.dumps({"model": model, "messages": messages, "stream": False}).encode("utf-8")
+    payload = json.dumps({"model": model, "messages": messages, "stream": False, "options": {"temperature": temperature}}).encode("utf-8")
     req = Request(OLLAMA_CHAT_URL, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
     try:
@@ -55,32 +55,34 @@ def ollama_full_chat(model: str, messages: List[dict]) -> str:
         raise RuntimeError(f"Cannot reach Ollama at {OLLAMA_CHAT_URL}: {e.reason}") from e
 
 
-def stream_chat(model: str, messages: List[dict]) -> Iterable[str]:
+def stream_chat(model: str, messages: List[dict], temperature: float = 0.1) -> Iterable[str]:
     """
     Stream chat using Ollama.
     
     Args:
         model: Model name/identifier
         messages: List of message dicts
+        temperature: Sampling temperature (default: 0.1)
     
     Yields:
         Text chunks as they're generated
     """
-    yield from ollama_stream_chat(model, messages)
+    yield from ollama_stream_chat(model, messages, temperature)
 
 
-def full_chat(model: str, messages: List[dict]) -> str:
+def full_chat(model: str, messages: List[dict], temperature: float = 0.1) -> str:
     """
     Full chat using Ollama.
     
     Args:
         model: Model name/identifier
         messages: List of message dicts
+        temperature: Sampling temperature (default: 0.1)
     
     Returns:
         Generated response text
     """
-    return ollama_full_chat(model, messages)
+    return ollama_full_chat(model, messages, temperature)
 
 
 
