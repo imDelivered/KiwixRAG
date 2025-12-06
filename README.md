@@ -182,7 +182,7 @@ Traditional RAG systems often retrieve irrelevant information, leading to halluc
 
 ---
 
-## Quick Setup
+## Quick Setup  -ˋˏ✄┈┈┈┈
 
 ### Prerequisites
 
