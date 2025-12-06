@@ -6,39 +6,29 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
 
 ---
 
-## ⚠️ Important Warning
-
-**This AI system can and will make things up.** Even with RAG (Retrieval-Augmented Generation), the language model may:
-- Generate incorrect or fabricated information
-- Hallucinate facts, dates, or details
-- Mix real information with made-up content
-- Provide confident-sounding but inaccurate answers
-
-**Always verify important information from authoritative sources.** Do not rely solely on this system for critical decisions, medical advice, legal information, or any situation where accuracy is essential.
 
 ---
 
 ## Disclaimer
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ DISCLAIMER OF LIABILITY                                      │
-├──────────────────────────────────────────────────────────────┤
-│ This software is provided "as is" without warranty of any    │
-│ kind. The author(s) and contributors are not responsible for │
-│ any misuse, damage, or consequences arising from the use of  │
-│ this software.                                               │
-│                                                              │
-│ Users are solely responsible for:                            │
-│ • Compliance with applicable laws and regulations            │
-│ • Ethical use of AI technology                               │
-│ • Content generated or accessed through this software        │
-│ • Any actions taken based on information from this software  │
-│ • Verifying the accuracy of AI-generated content            │
-│                                                              │
-│ By using this software, you agree to use it responsibly and  │
-│ accept full liability for your actions.                      │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DISCLAIMER OF LIABILITY                                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ This software is provided "as is" without warranty of any kind. The        │
+│ author(s) and contributors are not responsible for any misuse, damage, or   │
+│ consequences arising from the use of this software.                         │
+│                                                                             │
+│ Users are solely responsible for:                                           │
+│ • Compliance with applicable laws and regulations                           │
+│ • Ethical use of AI technology                                              │
+│ • Content generated or accessed through this software                        │
+│ • Any actions taken based on information from this software                 │
+│ • Verifying the accuracy of AI-generated content                            │
+│                                                                             │
+│ By using this software, you agree to use it responsibly and accept full     │
+│ liability for your actions.                                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -46,141 +36,162 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
 ## Features
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ • AI Chat Interface: Beautiful GUI built with tkinter           │
-│ • Offline Knowledge Base: Works with ZIM files                  │
-│ • Hybrid Search: Semantic (FAISS) + keyword (BM25) search       │
-│ • Just-In-Time Indexing: Auto-indexes articles on-the-fly       │
-│ • Modern UI: Dark/light mode, autocomplete, shortcuts           │
-│ • Multiple Models: Switch between any Ollama model              │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ • AI Chat Interface: Beautiful GUI built with tkinter                      │
+│ • Offline Knowledge Base: Works with ZIM files                             │
+│ • Hybrid Search: Semantic (FAISS) + keyword (BM25) search                  │
+│ • Just-In-Time Indexing: Auto-indexes articles on-the-fly                  │
+│ • Modern UI: Dark/light mode, autocomplete, shortcuts                      │
+│ • Multiple Models: Switch between any Ollama model                          │
+│ • Multi-Joint RAG: Three reasoning models prevent hallucinations           │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## How It Works
 
-### Architecture Overview
+### Multi-Joint RAG Architecture
 
-**RAG System Flow Diagram:**
+KiwixRAG uses an advanced **multi-joint architecture** where small AI reasoning models work together to ensure accurate, hallucination-free responses.
 
 ```
-┌─────────────┐
-│   User      │
-│  Question   │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  Query Processing                   │
-│  (Intent detection: Fact/Chat/Tut)  │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  Just-In-Time Indexing (JIT)        │
-│  ┌──────────────────────────────┐   │
-│  │ 1. Search ZIM Archive        │   │
-│  │    • Keyword (LibZIM)        │   │
-│  │    • Semantic (Title Index)* │   │
-│  │      *Optional (if built)    │   │
-│  └──────────────┬───────────────┘   │
-│                 │                   │
-│                 ▼                   │
-│  ┌──────────────────────────────┐   │
-│  │ 2. Index New Articles        │   │
-│  │ (Extract text, chunk, embed) │   │
-│  └──────────────────────────────┘   │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  Query Embedding                    │
-│  (Hugging Face: all-MiniLM-L6-v2)   │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  Hybrid Search                      │
-│  ┌──────────────┐  ┌──────────────┐ │
-│  │ FAISS        │  │ BM25         │ │
-│  │ (Semantic)   │  │ (Keyword)    │ │
-│  └──────┬───────┘  └──────┬───────┘ │
-│         │                 │         │
-│         └────────┬────────┘         │
-│                  ▼                  │
-│         Reciprocal Rank Fusion      │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  Neural Reranking                    │
-│  (CrossEncoder: ms-marco-MiniLM)    │
-│  (Reranks top candidates)            │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  Context Augmentation                │
-│  (Chat History + RAG Context)       │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────┐
-│  AI Language Model (Ollama)         │
-│  (Generate response)                │
-└──────┬──────────────────────────────┘
-       │
-       ▼
-┌─────────────┐
-│   Response  │
-│  to User    │
-└─────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         MULTI-JOINT RAG PIPELINE                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  User Query                                                                 │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  JOINT 1: Entity Extraction                                        │   │
+│  │  → Identifies core entities and resolves aliases for search        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Dual-Path Search                                                  │   │
+│  │  → Parallel Semantic (Vector) and Keyword (BM25) discovery         │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  JOINT 2: Article Scoring                                          │   │
+│  │  → Evaluates candidate articles for relevance to the entity        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Just-In-Time Indexing                                             │   │
+│  │  → Dynamically chunks and indexes only high-relevance content      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Hybrid Retrieval & Fusion                                         │   │
+│  │  → Retrieves chunks and ranks them via Reciprocal Rank Fusion      │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  JOINT 3: Chunk Filtering                                          │   │
+│  │  → Semantic evaluation of chunks against the original query        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│       │                                                                     │
+│       ▼                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  Final LLM Generation                                              │   │
+│  │  → Synthesizes answer exclusively from verified context            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **RAG System Flow:**
-> 1. User asks a question
-> 2. System searches ZIM archive using hybrid search
-> 3. Retrieves most relevant text chunks
-> 4. Augments AI context with retrieved information
-> 5. Generates responses that may include source citations
->
-> **⚠️ Important:** This system uses AI language models that can generate incorrect information, make things up, or hallucinate. Even with RAG, responses may not always be factual or accurate. Always verify important information from authoritative sources.
+![Architecture Diagram](architecture_diagram.png)
 
-### Components
+### Key Innovation: Reasoning Joints
 
-**1. Hybrid Retrieval**
+Traditional RAG systems often retrieve irrelevant information, leading to hallucinations. KiwixRAG solves this with three specialized reasoning models:
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ Dense Search (FAISS)    → Semantic similarity via embeddings│
-│ Sparse Search (BM25)    → Keyword-based matching            │
-│ Reciprocal Rank Fusion  → Combines both for optimal results │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  JOINT 1: Entity Extraction                                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Understands what you're really asking about                            │
+│  • Extracts entities and discovers aliases automatically                   │
+│  • Prevents searching for wrong topics                                     │
+│  • Model: llama3.2:1b (~500ms)                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**2. Just-In-Time Indexing**
-- No need to pre-index the entire ZIM file
-- Articles are indexed automatically when relevant to your query 
-- Fast startup, efficient memory usage
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  JOINT 2: Article Scoring                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Evaluates Wikipedia article relevance (0-10 scale)                      │
+│  • Selects only the most relevant articles for indexing                    │
+│  • Ensures high-quality knowledge base                                    │
+│  • Model: qwen2.5:0.5b (~400ms)                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-**3. GUI Features**
-- Real-time streaming responses
-- Query history and autocomplete
-- Text selection and quick queries (Ctrl+Click, highlight+Enter)
-- Model switching without restarting
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  JOINT 3: Chunk Filtering                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Filters retrieved text chunks by query relevance                        │
+│  • Removes off-topic information                                           │
+│  • Keeps only content that directly answers your question                 │
+│  • Model: llama3.2:1b (~400ms)                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Hybrid Retrieval Pipeline                                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Dense Search (FAISS): Semantic similarity using embeddings             │
+│  • Sparse Search (BM25): Keyword-based matching                           │
+│  • Reciprocal Rank Fusion: Combines both methods for best results         │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Just-In-Time Indexing                                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • No need to pre-index entire ZIM files                                  │
+│  • Articles indexed on-the-fly as needed                                  │
+│  • Efficient memory usage                                                  │
+│  • Faster startup, slower first queries                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Modern GUI                                                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  • Real-time streaming responses                                           │
+│  • Query history and autocomplete                                          │
+│  • Keyboard shortcuts and quick queries                                    │
+│  • Dark/light mode toggle                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-##             Quick Setup
+## Quick Setup
 
 ### Prerequisites
 
 ```
-┌──────────────────────────────────────────┐
-│ • Linux (tested on Ubuntu/Debian)        │
-│ • Python 3.8+                            │
-│ • Internet connection (for initial setup)│
-└──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ • Linux (tested on Ubuntu/Debian)                                           │
+│ • Python 3.8+                                                               │
+│ • Internet connection (for initial setup)                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Installation Steps
@@ -195,10 +206,12 @@ chmod +x setup.sh
 > - Installs Python and dependencies
 > - Sets up a virtual environment
 > - Installs Ollama
-> - Downloads the default AI model (llama3.2:1b)
+> - Downloads AI models:
+>   - llama3.2:1b (default response model + Joint 1 & 3)
+>   - llama3.1:1b (alternative response model, optional)
+>   - qwen2.5:0.5b (Joint 2: article scoring)
 > - Enables Ollama service
 > - Creates a `krag` command for easy access
-
 **Step 2: Add a ZIM file (optional but recommended)**
 - Download a ZIM file (e.g., from [Kiwix](https://library.kiwix.org/))
 - Place it in the project directory (e.g., `wikipedia_en_all_maxi_2025-08.zim`)
@@ -250,28 +263,30 @@ python3 run_chatbot.py
 ### Basic Commands
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Command          │ Action                                    │
-├──────────────────┼───────────────────────────────────────────┤
-│ /help            │ Show help menu                            │
-│ /clear           │ Clear chat history                        │
-│ /dark            │ Toggle dark/light mode                    │
-│ /model           │ Switch to a different Ollama model        │
-│ /exit or :q      │ Quit the application                      │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Command          │ Action                                                    │
+├──────────────────┼───────────────────────────────────────────────────────────┤
+│ /help            │ Show help menu                                            │
+│ /clear           │ Clear chat history                                        │
+│ /dark            │ Toggle dark/light mode                                    │
+│ /model           │ Switch to a different Ollama model                        │
+│ /exit or :q      │ Quit the application                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Keyboard Shortcuts
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Enter              │ Send message                            │
-│ Highlight + Enter  │ Auto-paste and query selected text      │
-│ Ctrl+Click         │ Select word and query it                │
-│ ↑↓                 │ Navigate autocomplete suggestions       │
-│ Tab                │ Select autocomplete suggestion          │
-│ Esc                │ Close dialogs                           │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Shortcut              │ Action                                               │
+├───────────────────────┼──────────────────────────────────────────────────────┤
+│ Enter                 │ Send message                                         │
+│ Highlight + Enter     │ Auto-paste and query selected text                  │
+│ Ctrl+Click            │ Select word and query it                             │
+│ ↑↓                    │ Navigate autocomplete suggestions                    │
+│ Tab                   │ Select autocomplete suggestion                       │
+│ Esc                   │ Close dialogs                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Building a Full Index (Optional)
@@ -299,30 +314,38 @@ DEFAULT_MODEL = "llama3.2:1b"  # Change to your preferred model
 ### RAG Settings
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ Setting           │ Value                                    │
-├───────────────────┼──────────────────────────────────────────┤
-│ Embedding Model   │ all-MiniLM-L6-v2 (fast, efficient)       │
-│ Top-K Results     │ 3 chunks per query                       │
-│ Chunk Size        │ 500 words with 50-word overlap           │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Setting              │ Value                                                 │
+├──────────────────────┼───────────────────────────────────────────────────────┤
+│ Embedding Model      │ all-MiniLM-L6-v2 (fast, efficient)                    │
+│ Top-K Results        │ 5 chunks per query (configurable)                    │
+│ Chunk Size           │ 500 words with 50-word overlap                       │
+│ Joint System         │ Enabled by default (can disable in config.py)         │
+│ Strict RAG Mode      │ Enabled (requires context to answer)                 │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-> Configurable in `chatbot/rag.py`
+> Configurable in `chatbot/rag.py` and `chatbot/config.py`
 
 ---
 
 ## Dependencies
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ libzim              │ ZIM file reading                       │
-│ sentence-transformers│ Text embeddings                       │
-│ faiss-cpu           │ Vector similarity search               │
-│ rank_bm25           │ Keyword search                         │
-│ beautifulsoup4      │ HTML parsing                           │
-│ tkinter             │ GUI (usually pre-installed with Python)│
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Package                │ Purpose                                            │
+├────────────────────────┼────────────────────────────────────────────────────┤
+│ libzim                 │ ZIM file reading                                   │
+│ sentence-transformers  │ Text embeddings                                    │
+│ faiss-cpu              │ Vector similarity search                           │
+│ rank_bm25              │ Keyword search                                     │
+│ beautifulsoup4         │ HTML parsing                                       │
+│ numpy                  │ Numerical operations                               │
+│ tqdm                   │ Progress bars                                      │
+│ requests               │ HTTP requests                                     │
+│ ollama                 │ Ollama API client                                  │
+│ tkinter                │ GUI (usually pre-installed with Python)             │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > All dependencies are installed automatically by `setup.sh`.
@@ -332,12 +355,12 @@ DEFAULT_MODEL = "llama3.2:1b"  # Change to your preferred model
 ## Use Cases
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ • Offline Wikipedia    │ Ask questions without internet      │
-│ • Documentation Chat   │ Chat with Python docs, manuals      │
-│ • Research Assistant   │ Query large knowledge bases locally │
-│ • Educational Tool     │ Learn from offline encyclopedias    │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ • Offline Wikipedia    │ Ask questions without internet                     │
+│ • Documentation Chat   │ Chat with Python docs, manuals                     │
+│ • Research Assistant   │ Query large knowledge bases locally                │
+│ • Educational Tool     │ Learn from offline encyclopedias                   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > **Note:** While this system can help explore knowledge bases, remember that AI responses may contain errors or fabricated information. Always cross-reference important facts with authoritative sources.
@@ -358,9 +381,10 @@ ollama serve
 ```
 
 ### "No models found"
-Install a model:
+Install required models:
 ```bash
-ollama pull llama3.2:1b
+ollama pull llama3.2:1b  # Default model + joints
+ollama pull qwen2.5:0.5b  # Article scoring joint
 ```
 
 ### Slow first queries
@@ -371,12 +395,14 @@ ollama pull llama3.2:1b
 ## Notes
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ • Works without ZIM file, but no RAG capabilities            │
-│ • First-time setup downloads ~1GB (Ollama + model + deps)    │
-│ • GPU acceleration automatic if CUDA available               │
-│ • All data stays local - no internet required after setup    │
-└──────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ • Works without ZIM file, but no RAG capabilities                           │
+│ • First-time setup downloads ~1-2GB (Ollama + models + deps)                │
+│ • GPU acceleration automatic if CUDA available                              │
+│ • All data stays local - no internet required after setup                  │
+│ • Joint system adds ~1.3s latency but significantly improves accuracy      │
+│ • Can disable joints in config.py for faster (but less accurate) responses │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

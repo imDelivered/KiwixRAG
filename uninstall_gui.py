@@ -41,7 +41,14 @@ class UninstallGUI:
         # Hazardous options
         ttk.Separator(opts_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
-        ttk.Checkbutton(opts_frame, text="Delete AI Model (llama3.2:1b)", variable=self.var_ollama).pack(anchor=tk.W, pady=5)
+        ttk.Label(opts_frame, text="AI Models (Ollama):", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=(10,5))
+        ttk.Checkbutton(opts_frame, text="Delete llama3.2:1b (default + joints)", variable=self.var_ollama).pack(anchor=tk.W, pady=2, padx=20)
+        
+        self.var_ollama_alt = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts_frame, text="Delete llama3.1:1b (alternative)", variable=self.var_ollama_alt).pack(anchor=tk.W, pady=2, padx=20)
+        
+        self.var_qwen = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opts_frame, text="Delete qwen2.5:0.5b (scoring joint)", variable=self.var_qwen).pack(anchor=tk.W, pady=2, padx=20)
         
         # Uninstall Button
         btn_frame = ttk.Frame(self.root)
@@ -55,7 +62,9 @@ class UninstallGUI:
         if self.var_venv.get(): to_delete.append("Virtual Environment")
         if self.var_indices.get(): to_delete.append("Search Indices")
         if self.var_cache.get(): to_delete.append("System Caches")
-        if self.var_ollama.get(): to_delete.append("Ollama Model")
+        if self.var_ollama.get(): to_delete.append("Ollama Model (llama3.2:1b)")
+        if self.var_ollama_alt.get(): to_delete.append("Ollama Model (llama3.1:1b)")
+        if self.var_qwen.get(): to_delete.append("Ollama Model (qwen2.5:0.5b)")
         
         if not to_delete:
             messagebox.showinfo("Nothing Selected", "No items selected for removal.")
@@ -88,10 +97,18 @@ class UninstallGUI:
 
             # 4. ZIM Files - REMOVED: ZIM files are user data and should never be deleted
 
-            # 5. Ollama Model
+            # 5. Ollama Models
             if self.var_ollama.get():
                 subprocess.run(["ollama", "rm", "llama3.2:1b"], check=False)
-                log.append("✅ Removed Ollama model")
+                log.append("✅ Removed llama3.2:1b")
+            
+            if self.var_ollama_alt.get():
+                subprocess.run(["ollama", "rm", "llama3.1:1b"], check=False)
+                log.append("✅ Removed llama3.1:1b")
+            
+            if self.var_qwen.get():
+                subprocess.run(["ollama", "rm", "qwen2.5:0.5b"], check=False)
+                log.append("✅ Removed qwen2.5:0.5b")
 
             messagebox.showinfo("Success", "\n".join(log))
             self.root.quit()

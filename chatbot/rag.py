@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import pickle
 from typing import List, Dict, Optional, Tuple, Iterator
@@ -9,6 +10,14 @@ import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
 from tqdm import tqdm
+
+# Import config module for runtime DEBUG check
+from chatbot import config
+
+def debug_print(msg: str):
+    if config.DEBUG:
+        print(f"[DEBUG:RAG] {msg}", file=sys.stderr)
+
 
 class TextProcessor:
     """Handles text extraction and chunking."""
@@ -81,6 +90,12 @@ class RAGSystem:
         self.title_faiss_path = os.path.join(index_dir, "titles.faiss")
         self.title_meta_path = os.path.join(index_dir, "titles.pkl")
         
+        # Joint System (initialized in load_resources if enabled)
+        self.use_joints = config.USE_JOINTS
+        self.entity_joint = None
+        self.scorer_joint = None
+        self.filter_joint = None
+        
     def load_resources(self):
         """Load models and indices if they exist."""
         print(f"Loading encoder: {self.model_name}...")
@@ -117,6 +132,20 @@ class RAGSystem:
                 print(f"Loaded {len(self.title_metadata)} titles.")
             except Exception as e:
                 print(f"Failed to load title index: {e}")
+        
+        # Initialize Joint System (if enabled)
+        if self.use_joints:
+            debug_print("Initializing multi-joint RAG system...")
+            try:
+                from chatbot.joints import EntityExtractorJoint, ArticleScorerJoint, ChunkFilterJoint
+                self.entity_joint = EntityExtractorJoint()
+                self.scorer_joint = ArticleScorerJoint()
+                self.filter_joint = ChunkFilterJoint()
+                debug_print("Joint system initialized successfully")
+            except Exception as e:
+                debug_print(f"Failed to initialize joints: {e}")
+                debug_print("Falling back to semantic search")
+                self.use_joints = False
 
     def build_index(self, zim_path: str, limit: int = None, batch_size: int = 1000):
         """Build FAISS and BM25 indices from ZIM file using batch processing."""
@@ -226,161 +255,321 @@ class RAGSystem:
 
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict]:
         """Hybrid retrieval with Just-In-Time indexing and Reranking."""
-        if not self.faiss_index or not self.bm25:
-             pass 
+        debug_print("=" * 70)
+        debug_print(f"RETRIEVE CALLED: query='{query}', top_k={top_k}")
+        debug_print(f"FAISS index status: {self.faiss_index is not None}, BM25 status: {self.bm25 is not None}")
         
-        print(f"\n🔍 Processing Query: '{query}'")
+        if not self.faiss_index or not self.bm25:
+            debug_print("WARNING: FAISS or BM25 index not available")
+            pass 
+        
+        print(f"\nProcessing Query: '{query}'")
         
         # 0. JIT Indexing step
+        debug_print("-" * 70)
+        debug_print("PHASE 0: JUST-IN-TIME INDEXING")
         try:
-            # Combined Search (Keyword + Semantic Title)
+            # 0a. Entity Extraction (Joint 1)
+            entity_info = None
+            search_terms = [query]
+            
+            if self.use_joints and self.entity_joint:
+                debug_print("0a. Entity extraction with Joint 1...")
+                entity_info = self.entity_joint.extract(query)
+                # Use entity and aliases for search
+                search_terms = [entity_info['entity']] + entity_info.get('aliases', [])
+                debug_print(f"Search terms expanded to: {search_terms}")
+            else:
+                debug_print("0a. Skipping entity extraction (joints disabled)")
+            
+            # 0b. Title Search with expanded terms
             candidates = []
             seen_titles = set()
             
-            # A. Keyword Search
-            keyword_candidates = self.search_by_title(query, full_text=True)
-            for c in keyword_candidates:
-                t = c['metadata']['title']
-                if t not in seen_titles:
-                    candidates.append(c)
-                    seen_titles.add(t)
+            # A. Keyword Search (using expanded terms if available)
+            debug_print("0b. Performing keyword-based title search...")
+            for term in search_terms[:3]:  # Limit to top 3 terms
+                keyword_candidates = self.search_by_title(term, full_text=True)
+                for c in keyword_candidates:
+                    t = c['metadata']['title']
+                    if t not in seen_titles:
+                        candidates.append(c)
+                        seen_titles.add(t)
+                        if len(candidates) <= 10:  # Log first 10
+                            debug_print(f"  - Added keyword candidate: '{t}'")
             
-            # B. Semantic Title Search (New)
+            debug_print(f"Keyword search returned {len(candidates)} total candidates")
+            
+            # B. Semantic Title Search
+            debug_print("0c. Performing semantic title search...")
             semantic_candidates = self.search_by_embedding(query, top_k=5, full_text=True)
+            debug_print(f"Semantic search returned {len(semantic_candidates)} candidates")
             for c in semantic_candidates:
                 t = c['metadata']['title']
                 if t not in seen_titles:
                     candidates.append(c)
                     seen_titles.add(t)
+                    debug_print(f"  - Added semantic candidate: '{t}'")
                     print(f" [Semantic Title Match] Found: '{t}'")
-
-            if candidates:
-                candidate_titles = [c['metadata']['title'] for c in candidates]
-                print(f"🔎 Found Title Candidates: {candidate_titles}")
-            else:
-                print("🔎 No direct title matches found.")
             
-            for cand in candidates:
+            # 0c. Article Scoring (Joint 2)
+            top_articles = []
+            if self.use_joints and self.scorer_joint and entity_info and candidates:
+                debug_print("0d. Article scoring with Joint 2...")
+                candidate_titles = [c['metadata']['title'] for c in candidates]
+                scored_titles = self.scorer_joint.score(entity_info, candidate_titles, top_k=5)
+                
+                # Convert scored titles back to full candidate objects
+                title_to_candidate = {c['metadata']['title']: c for c in candidates}
+                for title, score in scored_titles:
+                    if title in title_to_candidate:
+                        top_articles.append(title_to_candidate[title])
+                
+                debug_print(f"Joint 2 selected top {len(top_articles)} articles")
+            else:
+                # Fallback: use all candidates (up to 5, sorted by semantic search)
+                debug_print("0d. Skipping article scoring (joints disabled or no candidates)")
+                top_articles = candidates[:5]
+
+            if top_articles:
+                article_titles = [a['metadata']['title'] for a in top_articles]
+                debug_print(f"Articles selected for indexing: {article_titles}")
+                print(f"Found Title Candidates: {article_titles}")
+            else:
+                debug_print("No article candidates found")
+                print("No direct title matches found.")
+            
+            # 0e. JIT Indexing for top articles
+            debug_print("Checking top articles for JIT indexing...")
+            for idx, cand in enumerate(top_articles):
                 path = cand['metadata'].get('path')
+                title = cand['metadata'].get('title')
+                debug_print(f"Article {idx+1}: path='{path}', already_indexed={path in self.indexed_paths if path else 'N/A'}")
+                
                 # Check if already indexed
                 if path is not None and path not in self.indexed_paths:
-                    print(f"⚙️  JIT Indexing: '{cand['metadata']['title']}' (New Topic)...")
+                    debug_print(f"JIT INDEXING START for '{title}'")
+                    print(f"JIT Indexing: '{cand['metadata']['title']}' (New Topic)...")
                     text = cand['text'] # Full text
+                    debug_print(f"Full text length: {len(text)} chars")
                     chunks = TextProcessor.chunk_text(text)
+                    debug_print(f"Chunked into {len(chunks)} chunks")
                     
                     if chunks:
                         import torch
                         device = "cuda" if torch.cuda.is_available() else "cpu"
+                        debug_print(f"Using device: {device}")
                         if not self.encoder:
+                            debug_print("Encoder not loaded, loading now...")
                             self.encoder = SentenceTransformer(self.model_name, device=device)
-                            
+                        
+                        debug_print("Encoding chunks...")
                         embeddings = self.encoder.encode(chunks, device=device, show_progress_bar=False)
+                        debug_print(f"Embeddings shape: {embeddings.shape}")
                         
                         if self.faiss_index is None:
                             dimension = embeddings.shape[1]
+                            debug_print(f"Creating new FAISS index with dimension={dimension}")
                             self.faiss_index = faiss.IndexFlatL2(dimension)
-                            
+                        
+                        debug_print(f"Adding {len(embeddings)} embeddings to FAISS index...")
                         self.faiss_index.add(embeddings.astype('float32'))
                         
                         self.doc_chunks.extend(chunks)
                         for _ in chunks:
                             self.documents.append(cand['metadata'])
-                            
+                        
                         self.indexed_paths.add(path)
-                        print(f"✅ Indexed {len(chunks)} chunks.")
+                        debug_print(f"JIT INDEXING COMPLETE. Total indexed chunks now: {len(self.doc_chunks)}")
+                        print(f"Indexed {len(chunks)} chunks.")
+                else:
+                    if path:
+                        debug_print(f"Skipping '{title}' - already indexed")
         except Exception as e:
-            print(f"❌ JIT Error: {e}")
+            print(f"JIT Error: {e}")
+            debug_print(f"JIT EXCEPTION: {type(e).__name__}: {e}")
 
         # 1. Dense Retrieval
-        print("🧠 Performing Dense Retrieval...")
+        debug_print("-" * 70)
+        debug_print("PHASE 1: DENSE RETRIEVAL (FAISS)")
+        print("Performing Dense Retrieval...")
         dense_hits = {}
         if self.faiss_index and self.faiss_index.ntotal > 0:
             try:
+                debug_print(f"FAISS index total vectors: {self.faiss_index.ntotal}")
+                debug_print(f"Encoding query for dense search...")
                 q_emb = self.encoder.encode([query]).astype('float32')
+                debug_print(f"Query embedding shape: {q_emb.shape}")
                 k_search = min(top_k * 4, self.faiss_index.ntotal) # Fetch more for reranking
+                debug_print(f"Searching for top {k_search} candidates...")
                 D, I = self.faiss_index.search(q_emb, k_search)
+                debug_print(f"FAISS search distances (top 5): {D[0][:5]}")
+                debug_print(f"FAISS search indices (top 5): {I[0][:5]}")
                 dense_hits = {idx: rank for rank, idx in enumerate(I[0])}
-                print(f"✅ Dense retrieval found {len(dense_hits)} hits.")
+                debug_print(f"Dense retrieval found {len(dense_hits)} hits")
+                print(f"Dense retrieval found {len(dense_hits)} hits.")
             except Exception as e: 
-                print(f"❌ Dense search error: {e}")
+                print(f"Dense search error: {e}")
+                debug_print(f"Dense search exception: {type(e).__name__}: {e}")
                 pass
         else:
-            print("⚠️ FAISS index not available or empty for dense retrieval.")
+            debug_print("FAISS index not available or empty")
+            print("FAISS index not available or empty for dense retrieval.")
         
         # 2. Sparse Retrieval
-        print("📝 Performing Sparse Retrieval (BM25)...")
+        debug_print("-" * 70)
+        debug_print("PHASE 2: SPARSE RETRIEVAL (BM25)")
+        print("Performing Sparse Retrieval (BM25)...")
         sparse_hits = {}
         if self.bm25:
             try:
                 tokenized_query = query.split(" ")
+                debug_print(f"Tokenized query: {tokenized_query}")
+                debug_print("Computing BM25 scores...")
                 sparse_scores = self.bm25.get_scores(tokenized_query)
+                debug_print(f"BM25 scores shape: {sparse_scores.shape}, max score: {sparse_scores.max():.4f}")
                 sparse_indices = np.argsort(sparse_scores)[::-1][:top_k * 4] # Fetch more for reranking
+                debug_print(f"Top 5 BM25 scores: {[sparse_scores[i] for i in sparse_indices[:5]]}")
+                debug_print(f"Top 5 BM25 indices: {sparse_indices[:5].tolist()}")
                 sparse_hits = {idx: rank for rank, idx in enumerate(sparse_indices)}
-                print(f"✅ Sparse retrieval found {len(sparse_hits)} hits.")
+                debug_print(f"Sparse retrieval found {len(sparse_hits)} hits")
+                print(f"Sparse retrieval found {len(sparse_hits)} hits.")
             except Exception as e: 
-                print(f"❌ Sparse search error: {e}")
+                print(f"Sparse search error: {e}")
+                debug_print(f"Sparse search exception: {type(e).__name__}: {e}")
                 pass
         else:
-            print("⚠️ BM25 index not available for sparse retrieval.")
+            debug_print("BM25 index not available")
+            print("BM25 index not available for sparse retrieval.")
             
         # 3. Reciprocal Rank Fusion (Initial Filter)
-        print("융 Combining results with RRF...")
+        debug_print("-" * 70)
+        debug_print("PHASE 3: RECIPROCAL RANK FUSION (RRF)")
+        print("Combining results with RRF...")
         fused_scores = {}
         all_indices = set(dense_hits.keys()) | set(sparse_hits.keys())
+        debug_print(f"Total unique indices from both retrievers: {len(all_indices)}")
         k = 60
+        debug_print(f"RRF constant k={k}")
         
         for idx in all_indices:
             if idx == -1: continue 
             score = 0
+            contributions = []
             if idx in dense_hits:
-                score += 1 / (k + dense_hits[idx])
+                dense_contrib = 1 / (k + dense_hits[idx])
+                score += dense_contrib
+                contributions.append(f"dense={dense_contrib:.4f}")
             if idx in sparse_hits:
-                score += 1 / (k + sparse_hits[idx])
+                sparse_contrib = 1 / (k + sparse_hits[idx])
+                score += sparse_contrib
+                contributions.append(f"sparse={sparse_contrib:.4f}")
             fused_scores[idx] = score
+            if len(fused_scores) <= 5:  # Log first 5 for brevity
+                debug_print(f"  idx={idx}, score={score:.4f} ({', '.join(contributions)})")
             
         # Get top 20 candidates for Reranking
         top_candidates = sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)[:20]
+        debug_print(f"Selected top 20 candidates for reranking")
+        debug_print(f"Top 5 RRF scores: {[(idx, score) for idx, score in top_candidates[:5]]}")
         
-        # 4. Neural Reranking
-        print("⚖️  Reranking candidates...")
+        # 4. Chunk Filtering / Neural Reranking
+        debug_print("-" * 70)
+        debug_print("PHASE 4: CHUNK FILTERING / RERANKING")
         reranked_results = []
-        try:
-            from sentence_transformers import CrossEncoder
-            # Load small efficient cross-encoder
-            reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
-            
-            pairs = []
-            candidate_indices = []
-            
-            for idx, _ in top_candidates:
-                if idx < len(self.doc_chunks):
-                    text = self.doc_chunks[idx]
-                    pairs.append([query, text])
-                    candidate_indices.append(idx)
-            
-            if pairs:
-                scores = reranker.predict(pairs)
+        
+        # Prepare chunks for filtering
+        chunks_to_filter = []
+        for idx, score in top_candidates:
+            if idx < len(self.doc_chunks):
+                chunks_to_filter.append({
+                    'idx': idx,
+                    'text': self.doc_chunks[idx],
+                    'rrf_score': score,
+                    'metadata': self.documents[idx] if idx < len(self.documents) else {}
+                })
+        
+        # Joint 3: Chunk Filtering (preferred)
+        if self.use_joints and self.filter_joint:
+            debug_print("Using Joint 3 for chunk filtering...")
+            print("Filtering chunks with Joint 3...")
+            try:
+                filtered_chunks = self.filter_joint.filter(query, chunks_to_filter, top_k)
+                debug_print(f"Joint 3 returned {len(filtered_chunks)} filtered chunks")
                 
-                for i, score in enumerate(scores):
-                    idx = candidate_indices[i]
-                    reranked_results.append((idx, float(score)))
+                # Convert back to (idx, score) format
+                for chunk in filtered_chunks:
+                    idx = chunk['idx']
+                    relevance_score = chunk.get('relevance_score', chunk.get('rrf_score', 0))
+                    reranked_results.append((idx, relevance_score))
                 
-                # Sort by new scores
-                reranked_results.sort(key=lambda x: x[1], reverse=True)
-                reranked_results = reranked_results[:top_k]
-                print(f"✅ Reranking complete. Top score: {reranked_results[0][1]:.4f}")
-            else:
-                 reranked_results = top_candidates[:top_k]
-                 
-        except Exception as e:
-            print(f"⚠️ Reranker failed (or not installed), falling back to RRF: {e}")
-            reranked_results = top_candidates[:top_k]
+                if reranked_results:
+                    avg_score = sum(score for _, score in reranked_results) / len(reranked_results)
+                    debug_print(f"Chunk filtering complete. Avg relevance: {avg_score:.2f}/10")
+                    print(f"Filtering complete. {len(reranked_results)} chunks selected.")
+                
+            except Exception as e:
+                debug_print(f"Joint 3 filtering failed: {type(e).__name__}: {e}")
+                debug_print("Falling back to neural reranking")
+                self.use_joints = False  # Temporary fallback
+        
+        # Fallback: Neural Reranking
+        if not reranked_results:
+            debug_print("Using neural reranking...")
+            print("Reranking candidates...")
+            try:
+                from sentence_transformers import CrossEncoder
+                # Load small efficient cross-encoder
+                debug_print("Loading cross-encoder model: cross-encoder/ms-marco-MiniLM-L-6-v2")
+                reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
+                
+                pairs = []
+                candidate_indices = []
+                
+                debug_print(f"Building query-document pairs for reranking...")
+                for idx, _ in top_candidates:
+                    if idx < len(self.doc_chunks):
+                        text = self.doc_chunks[idx]
+                        pairs.append([query, text])
+                        candidate_indices.append(idx)
+                
+                debug_print(f"Created {len(pairs)} pairs for reranking")
+                
+                if pairs:
+                    debug_print("Running cross-encoder prediction...")
+                    scores = reranker.predict(pairs)
+                    debug_print(f"Reranker scores (top 5): {scores[:5]}")
+                    
+                    for i, score in enumerate(scores):
+                        idx = candidate_indices[i]
+                        reranked_results.append((idx, float(score)))
+                    
+                    # Sort by new scores
+                    reranked_results.sort(key=lambda x: x[1], reverse=True)
+                    reranked_results = reranked_results[:top_k]
+                    debug_print(f"Reranking complete. Kept top {len(reranked_results)} results")
+                    debug_print(f"Top reranked scores: {[score for _, score in reranked_results]}")
+                    print(f"Reranking complete. Top score: {reranked_results[0][1]:.4f}")
+                else:
+                    debug_print("No pairs to rerank, falling back to RRF")
+                    reranked_results = top_candidates[:top_k]
+                     
+            except Exception as e:
+                print(f"Reranker failed (or not installed), falling back to RRF: {e}")
+                debug_print(f"Reranker exception: {type(e).__name__}: {e}")
+                debug_print("Falling back to RRF scores")
+                reranked_results = top_candidates[:top_k]
 
         results = []
-        print("\n📄 Semantic Search Results:")
-        for idx, score in reranked_results:
+        debug_print("-" * 70)
+        debug_print("PHASE 5: RESULTS ASSEMBLY")
+        print("\nSemantic Search Results:")
+        for i, (idx, score) in enumerate(reranked_results):
             if idx < len(self.doc_chunks):
                 doc = self.documents[idx]
+                title = doc['title']
+                chunk_text = self.doc_chunks[idx]
+                debug_print(f"Result {i+1}: idx={idx}, title='{title}', score={score:.4f}, chunk_len={len(chunk_text)}")
                 print(f"   - {doc['title']} (Score: {score:.4f})")
                 results.append({
                     'text': self.doc_chunks[idx],
@@ -388,24 +577,32 @@ class RAGSystem:
                     'score': score
                 })
         
+        debug_print(f"RETRIEVE COMPLETE. Returning {len(results)} results")
+        debug_print("=" * 70)
         return results
 
     def search_by_title(self, query: str, zim_path: str = None, full_text: bool = False) -> List[Dict]:
         """Fast fallback: Search by title using ZIM's internal index."""
+        debug_print(f"search_by_title called: query='{query}', full_text={full_text}")
         if not zim_path:
             # Try to find one in current dir
             files = [f for f in os.listdir('.') if f.endswith('.zim')]
             if files:
                 zim_path = files[0]
+                debug_print(f"Found ZIM file: {zim_path}")
             else:
+                debug_print("No ZIM file found")
                 return []
                 
         try:
+            debug_print(f"Opening ZIM archive: {zim_path}")
             zim = libzim.Archive(zim_path)
             searcher = libzim.SuggestionSearcher(zim)
             
             clean_query = query.replace("?", "").replace(".", "").replace("!", "")
+            debug_print(f"Cleaned query: '{clean_query}'")
             tokens = clean_query.split()
+            debug_print(f"Query tokens: {tokens}")
             
             stopwords = {
                 "how", "what", "when", "who", "where", "why", "is", "are", "do", "did", "does", "can", "could",
@@ -414,38 +611,56 @@ class RAGSystem:
             }
             
             keywords = [w for w in tokens if w.lower() not in stopwords]
+            debug_print(f"Extracted keywords: {keywords}")
             
             hits_map = {} 
             
             # Strategy 1: Full phrase
+            debug_print("Strategy 1: Searching with full phrase...")
             if keywords:
                 full_term = " ".join(keywords)
+                debug_print(f"Full term search: '{full_term}'")
                 results = searcher.suggest(full_term)
-                if results.getEstimatedMatches() > 0:
+                matches = results.getEstimatedMatches()
+                debug_print(f"Full term matches: {matches}")
+                if matches > 0:
                      self._collect_hits(zim, results, hits_map, full_text)
             
             # Strategy 2: Individual keywords
+            debug_print("Strategy 2: Searching with individual keywords...")
             if len(hits_map) < 3 and keywords:
                 sorted_keywords = sorted(keywords, key=len, reverse=True)
+                debug_print(f"Using top keywords: {sorted_keywords[:2]}")
                 for kw in sorted_keywords[:2]:
+                    debug_print(f"Searching for keyword: '{kw}'")
                     results = searcher.suggest(kw)
-                    if results.getEstimatedMatches() > 0:
+                    matches = results.getEstimatedMatches()
+                    debug_print(f"Keyword '{kw}' matches: {matches}")
+                    if matches > 0:
                          self._collect_hits(zim, results, hits_map, full_text)
                          
             # Strategy 3: Original query
+            debug_print("Strategy 3: Searching with original query...")
             if not hits_map:
-                 results = searcher.suggest(query)
-                 if results.getEstimatedMatches() > 0:
-                     self._collect_hits(zim, results, hits_map, full_text)
+                debug_print(f"Original query search: '{query}'")
+                results = searcher.suggest(query)
+                matches = results.getEstimatedMatches()
+                debug_print(f"Original query matches: {matches}")
+                if matches > 0:
+                    self._collect_hits(zim, results, hits_map, full_text)
 
+            debug_print(f"Total hits collected: {len(hits_map)}")
             return list(hits_map.values())[:5]
 
         except Exception as e:
+            debug_print(f"search_by_title exception: {type(e).__name__}: {e}")
             return []
 
     def search_by_embedding(self, query: str, top_k: int = 5, zim_path: str = None, full_text: bool = False) -> List[Dict]:
         """Search titles using vector embeddings."""
+        debug_print(f"search_by_embedding called: query='{query}', top_k={top_k}, full_text={full_text}")
         if not self.title_faiss_index or not self.title_metadata:
+            debug_print("Title FAISS index or metadata not available")
             return []
             
         if not zim_path:

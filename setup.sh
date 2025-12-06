@@ -68,27 +68,60 @@ else
     echo "✓ Ollama already installed"
 fi
 
-# Step 5b: Pull the Model
-echo "[5.5/6] Checking for AI Model (llama3.2:1b)..."
-if ollama list | grep -q "llama3.2:1b"; then
-    echo "✓ Model llama3.2:1b already present"
+# Step 5b: Pull the Models
+echo "[5.5/6] Checking for AI Models..."
+
+# Ensure ollama service is reachable
+if ! curl -s http://localhost:11434/api/tags > /dev/null; then
+    echo "Ollama service not responding. Attempting to start..."
+    ollama serve > /dev/null 2>&1 &
+    OLLAMA_PID=$!
+    sleep 5
+fi
+
+# Pull final model (llama3.1:1b)
+if ollama list | grep -q "llama3.1:1b"; then
+    echo "✓ Final model llama3.1:1b already present"
 else
-    echo "Pulling llama3.2:1b (this may take a few minutes)..."
-    # Ensure ollama service is reachable, or try to start it temporarily
-    if ! curl -s http://localhost:11434/api/tags > /dev/null; then
-        echo "Ollama service not responding. Attempting to start..."
-        ollama serve > /dev/null 2>&1 &
-        OLLAMA_PID=$!
-        sleep 5
-    fi
-    
-    if ollama pull llama3.2:1b; then
-        echo "✓ Model downloaded successfully"
+    echo "Pulling llama3.1:1b (final response model)..."
+    if ollama pull llama3.1:1b; then
+        echo "✓ llama3.1:1b downloaded successfully"
     else
-        echo "⚠️  Failed to download model automatically."
+        echo "⚠️  Failed to download llama3.1:1b"
+        echo "   Please run 'ollama pull llama3.1:1b' manually."
+    fi
+fi
+
+# Pull joint models (llama3.2:1b)
+if ollama list | grep -q "llama3.2:1b"; then
+    echo "✓ Joint model llama3.2:1b already present"
+else
+    echo "Pulling llama3.2:1b (entity & chunk filtering)..."
+    if ollama pull llama3.2:1b; then
+        echo "✓ llama3.2:1b downloaded successfully"
+    else
+        echo "⚠️  Failed to download llama3.2:1b"
         echo "   Please run 'ollama pull llama3.2:1b' manually."
     fi
 fi
+
+# Pull scorer model (qwen2.5:0.5b)
+if ollama list | grep -q "qwen2.5:0.5b"; then
+    echo "✓ Scorer model qwen2.5:0.5b already present"
+else
+    echo "Pulling qwen2.5:0.5b (article scoring)..."
+    if ollama pull qwen2.5:0.5b; then
+        echo "✓ qwen2.5:0.5b downloaded successfully"
+    else
+        echo "⚠️  Failed to download qwen2.5:0.5b"
+        echo "   Please run 'ollama pull qwen2.5:0.5b' manually."
+    fi
+fi
+
+# Explicitly pull requests and ollama if missing from venv (fallback)
+./venv/bin/pip install requests ollama > /dev/null 2>&1 || true
+
+echo "✓ All models checked/downloaded"
 
 # Step 5c: Enable Ollama Service
 if command -v systemctl > /dev/null 2>&1; then

@@ -22,6 +22,12 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    # Validation: If model arg has spaces (e.g. user passed a query), ignore it
+    if args.model and " " in args.model:
+        if args.debug:
+            print(f"[WARNING] Argument '{args.model}' ignored (looks like a query, not a model). Using default.", file=sys.stderr)
+        args.model = DEFAULT_MODEL
+    
     # Set DEBUG flag in config
     from chatbot import config
     config.DEBUG = args.debug

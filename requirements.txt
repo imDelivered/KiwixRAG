@@ -8,3 +8,5 @@ rank_bm25
 numpy
 beautifulsoup4
 tqdm
+requests
+ollama
