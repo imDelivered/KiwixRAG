@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic Intent Detection**: New `intent.py` module that automatically detects user intent (Tutorial, Conversation, Factual) to adjust system behavior.
 - **Neural Reranking**: Integrated `sentence-transformers` CrossEncoder to re-rank RAG results, significantly improving relevance for complex queries.
 - **Debug Flag**: Added `--debug` command-line argument to view internal retrieval and scoring logs.
+- **Semantic Title Search**: Implemented vector-based JIT discovery (`build_title_index.py`) allowing the system to find relevant articles even when keywords don't match (e.g., "King of Pop" -> "Michael Jackson").
 
 ### Changed
 - **Retrieval Depth**: Increased `top_k` documents from 3 to 5 to improve recall for obscure facts.

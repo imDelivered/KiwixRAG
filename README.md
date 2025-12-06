@@ -73,20 +73,22 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
        ▼
 ┌─────────────────────────────────────┐
 │  Query Processing                   │
-│  (Intent detection, query parsing)  │
+│  (Intent detection: Fact/Chat/Tut)  │
 └──────┬──────────────────────────────┘
        │
        ▼
 ┌─────────────────────────────────────┐
 │  Just-In-Time Indexing (JIT)        │
 │  ┌──────────────────────────────┐   │
-│  │ Search ZIM Archive by Title │   │
-│  │ (Find relevant articles)    │   │
+│  │ 1. Search ZIM Archive        │   │
+│  │    • Keyword (LibZIM)        │   │
+│  │    • Semantic (Title Index)* │   │
+│  │      *Optional (if built)    │   │
 │  └──────────────┬───────────────┘   │
 │                 │                   │
 │                 ▼                   │
 │  ┌──────────────────────────────┐   │
-│  │ Index New Articles           │   │
+│  │ 2. Index New Articles        │   │
 │  │ (Extract text, chunk, embed) │   │
 │  └──────────────────────────────┘   │
 └──────┬──────────────────────────────┘
@@ -103,9 +105,6 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
 │  ┌──────────────┐  ┌──────────────┐ │
 │  │ FAISS        │  │ BM25         │ │
 │  │ (Semantic)   │  │ (Keyword)    │ │
-│  │ Uses pre-    │  │ Direct text  │ │
-│  │ computed     │  │ matching     │ │
-│  │ embeddings   │  │              │ │
 │  └──────┬───────┘  └──────┬───────┘ │
 │         │                 │         │
 │         └────────┬────────┘         │
@@ -123,7 +122,7 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
        ▼
 ┌─────────────────────────────────────┐
 │  Context Augmentation                │
-│  (Combine query + retrieved chunks) │
+│  (Chat History + RAG Context)       │
 └──────┬──────────────────────────────┘
        │
        ▼

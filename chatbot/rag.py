@@ -60,16 +60,26 @@ class RAGSystem:
         self.index_dir = index_dir
         self.model_name = model_name
         self.encoder = None
+        
+        # Content Indices (for documents/chunks)
         self.faiss_index = None
         self.bm25 = None
         self.documents = [] # Metadata storage
         self.doc_chunks = [] # Actual text chunks
         self.indexed_paths = set() # Track what we have indexed
         
+        # Title Indices (for JIT discovery)
+        self.title_faiss_index = None
+        self.title_metadata = None
+        
         # Paths
         self.faiss_path = os.path.join(index_dir, "faiss.index")
         self.bm25_path = os.path.join(index_dir, "bm25.pkl")
         self.meta_path = os.path.join(index_dir, "metadata.pkl")
+        
+        # Title Paths
+        self.title_faiss_path = os.path.join(index_dir, "titles.faiss")
+        self.title_meta_path = os.path.join(index_dir, "titles.pkl")
         
     def load_resources(self):
         """Load models and indices if they exist."""
@@ -82,8 +92,9 @@ class RAGSystem:
         except:
              self.encoder = SentenceTransformer(self.model_name)
         
+        # Load Content Indices
         if os.path.exists(self.faiss_path) and os.path.exists(self.bm25_path):
-            print("Loading existing indices...")
+            print("Loading existing content indices...")
             self.faiss_index = faiss.read_index(self.faiss_path)
             with open(self.bm25_path, 'rb') as f:
                 self.bm25 = pickle.load(f)
@@ -94,10 +105,24 @@ class RAGSystem:
                 # Rebuild indexed set
                 self.indexed_paths = {doc.get('path') for doc in self.documents if doc.get('path') is not None}
         else:
-            print("No existing indices found. Need to build index.")
+            print("No existing content indices found.")
+
+        # Load Title Indices (Optional)
+        if os.path.exists(self.title_faiss_path) and os.path.exists(self.title_meta_path):
+            print("Loading Semantic Title Index...")
+            try:
+                self.title_faiss_index = faiss.read_index(self.title_faiss_path)
+                with open(self.title_meta_path, 'rb') as f:
+                    self.title_metadata = pickle.load(f)
+                print(f"Loaded {len(self.title_metadata)} titles.")
+            except Exception as e:
+                print(f"Failed to load title index: {e}")
 
     def build_index(self, zim_path: str, limit: int = None, batch_size: int = 1000):
         """Build FAISS and BM25 indices from ZIM file using batch processing."""
+        # ... (Existing build_index logic - truncated for brevity but functionality preserved by keeping same structure if overwrite?)
+        # WAIT - write_to_file overwrites. I must include the full logic.
+        
         import torch
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {device}")
@@ -161,7 +186,6 @@ class RAGSystem:
                 if limit and count >= limit:
                     break
             except Exception as e:
-                # print(f"Error processing entry {i}: {e}")
                 pass
 
         # Process remaining
@@ -203,20 +227,40 @@ class RAGSystem:
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict]:
         """Hybrid retrieval with Just-In-Time indexing and Reranking."""
         if not self.faiss_index or not self.bm25:
-             pass # Logic handled in init/load
+             pass 
         
         print(f"\n🔍 Processing Query: '{query}'")
         
         # 0. JIT Indexing step
         try:
-            title_candidates = self.search_by_title(query, full_text=True)
-            if title_candidates:
-                candidate_titles = [c['metadata']['title'] for c in title_candidates]
+            # Combined Search (Keyword + Semantic Title)
+            candidates = []
+            seen_titles = set()
+            
+            # A. Keyword Search
+            keyword_candidates = self.search_by_title(query, full_text=True)
+            for c in keyword_candidates:
+                t = c['metadata']['title']
+                if t not in seen_titles:
+                    candidates.append(c)
+                    seen_titles.add(t)
+            
+            # B. Semantic Title Search (New)
+            semantic_candidates = self.search_by_embedding(query, top_k=5, full_text=True)
+            for c in semantic_candidates:
+                t = c['metadata']['title']
+                if t not in seen_titles:
+                    candidates.append(c)
+                    seen_titles.add(t)
+                    print(f" [Semantic Title Match] Found: '{t}'")
+
+            if candidates:
+                candidate_titles = [c['metadata']['title'] for c in candidates]
                 print(f"🔎 Found Title Candidates: {candidate_titles}")
             else:
                 print("🔎 No direct title matches found.")
             
-            for cand in title_candidates:
+            for cand in candidates:
                 path = cand['metadata'].get('path')
                 # Check if already indexed
                 if path is not None and path not in self.indexed_paths:
@@ -363,46 +407,96 @@ class RAGSystem:
             clean_query = query.replace("?", "").replace(".", "").replace("!", "")
             tokens = clean_query.split()
             
-            # Expanded stopword list
             stopwords = {
                 "how", "what", "when", "who", "where", "why", "is", "are", "do", "did", "does", "can", "could",
                 "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "about",
                 "tell", "me", "explain", "describe", "define", "show", "list", "give"
             }
             
-            # Filter tokens (case-insensitive check)
             keywords = [w for w in tokens if w.lower() not in stopwords]
             
-            hits_map = {} # path -> hit
+            hits_map = {} 
             
-            # Strategy 1: Try full combined phrase (e.g. "European Union")
+            # Strategy 1: Full phrase
             if keywords:
                 full_term = " ".join(keywords)
-                # print(f"🔎 Strategy 1: '{full_term}'")
                 results = searcher.suggest(full_term)
                 if results.getEstimatedMatches() > 0:
                      self._collect_hits(zim, results, hits_map, full_text)
             
-            # Strategy 2: If no or few results, try individual keywords (longest first)
+            # Strategy 2: Individual keywords
             if len(hits_map) < 3 and keywords:
-                # Sort keywords by length
                 sorted_keywords = sorted(keywords, key=len, reverse=True)
-                for kw in sorted_keywords[:2]: # Try top 2 longest keywords
-                    # print(f"🔎 Strategy 2: '{kw}'")
+                for kw in sorted_keywords[:2]:
                     results = searcher.suggest(kw)
                     if results.getEstimatedMatches() > 0:
                          self._collect_hits(zim, results, hits_map, full_text)
                          
-            # Strategy 3: Fallback to original query if nothing (last resort)
+            # Strategy 3: Original query
             if not hits_map:
                  results = searcher.suggest(query)
                  if results.getEstimatedMatches() > 0:
                      self._collect_hits(zim, results, hits_map, full_text)
 
-            return list(hits_map.values())[:5] # Return top 5 unique
+            return list(hits_map.values())[:5]
 
         except Exception as e:
-            # print(f"Fast Search Error: {e}")
+            return []
+
+    def search_by_embedding(self, query: str, top_k: int = 5, zim_path: str = None, full_text: bool = False) -> List[Dict]:
+        """Search titles using vector embeddings."""
+        if not self.title_faiss_index or not self.title_metadata:
+            return []
+            
+        if not zim_path:
+            files = [f for f in os.listdir('.') if f.endswith('.zim')]
+            if files:
+                zim_path = files[0]
+            else:
+                return []
+
+        try:
+            zim = libzim.Archive(zim_path)
+            
+            # Embed Query
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            q_emb = self.encoder.encode([query], device=device).astype('float32')
+            
+            # Search
+            D, I = self.title_faiss_index.search(q_emb, top_k)
+            print(f"DEBUG: FAISS Indices: {I[0]}")
+            print(f"DEBUG: FAISS Distances: {D[0]}")
+
+            results = []
+            for idx in I[0]:
+                if idx == -1 or idx >= len(self.title_metadata):
+                    continue
+                
+                meta = self.title_metadata[idx]
+                hit_path = meta['path']
+                print(f"DEBUG: Checking path: {hit_path}")
+                
+                # Fetch content from ZIM
+                try:
+                    entry = zim.get_entry_by_path(hit_path)
+                    item = entry.get_item()
+                    if item.mimetype == 'text/html':
+                        text = TextProcessor.extract_text(item.content)
+                        display_text = text if full_text else text[:2000]
+                        
+                        results.append({
+                            'text': display_text,
+                            'metadata': {'title': entry.title, 'path': entry.path},
+                            'score': 1.0 # Placeholder
+                        })
+                except:
+                    continue
+            
+            return results
+
+        except Exception as e:
+            print(f"Semantic Search Error: {e}")
             return []
 
     def _collect_hits(self, zim, results, hits_map: Dict, full_text: bool):
