@@ -62,6 +62,58 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
 
 ### Architecture Overview
 
+**RAG System Flow Diagram:**
+
+```
+┌─────────────┐
+│   User      │
+│  Question   │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  Query Processing                   │
+│  (Intent detection, query parsing)  │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  Hybrid Search                      │
+│  ┌──────────────┐  ┌──────────────┐ │
+│  │ FAISS        │  │ BM25         │ │
+│  │ (Semantic)   │  │ (Keyword)    │ │
+│  └──────┬───────┘  └──────┬───────┘ │
+│         │                 │         │
+│         └────────┬────────┘         │
+│                  ▼                  │
+│         Reciprocal Rank Fusion      │
+└──────────────────┬──────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────┐
+│  ZIM Archive                        │
+│  (Retrieve relevant text chunks)    │
+└──────┬──────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  Context Augmentation               │
+│  (Combine query + retrieved chunks) │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  AI Language Model (Ollama)         │
+│  (Generate response)                │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────┐
+│   Response  │
+│  to User    │
+└─────────────┘
+```
+
 > **RAG System Flow:**
 > 1. User asks a question
 > 2. System searches ZIM archive using hybrid search
