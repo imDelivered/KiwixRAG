@@ -6,15 +6,6 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
 
 ---
 
-## ⚠️ Important Warning
-
-**This AI system can and will make things up.** Even with RAG (Retrieval-Augmented Generation), the language model may:
-- Generate incorrect or fabricated information
-- Hallucinate facts, dates, or details
-- Mix real information with made-up content
-- Provide confident-sounding but inaccurate answers
-
-**Always verify important information from authoritative sources.** Do not rely solely on this system for critical decisions, medical advice, legal information, or any situation where accuracy is essential.
 
 ---
 
