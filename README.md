@@ -78,26 +78,51 @@ A powerful offline-capable chatbot with **Retrieval-Augmented Generation (RAG)**
        │
        ▼
 ┌─────────────────────────────────────┐
+│  Just-In-Time Indexing (JIT)        │
+│  ┌──────────────────────────────┐   │
+│  │ Search ZIM Archive by Title │   │
+│  │ (Find relevant articles)    │   │
+│  └──────────────┬───────────────┘   │
+│                 │                   │
+│                 ▼                   │
+│  ┌──────────────────────────────┐   │
+│  │ Index New Articles           │   │
+│  │ (Extract text, chunk, embed) │   │
+│  └──────────────────────────────┘   │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  Query Embedding                    │
+│  (Hugging Face: all-MiniLM-L6-v2)   │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
 │  Hybrid Search                      │
 │  ┌──────────────┐  ┌──────────────┐ │
 │  │ FAISS        │  │ BM25         │ │
 │  │ (Semantic)   │  │ (Keyword)    │ │
+│  │ Uses pre-    │  │ Direct text  │ │
+│  │ computed     │  │ matching     │ │
+│  │ embeddings   │  │              │ │
 │  └──────┬───────┘  └──────┬───────┘ │
 │         │                 │         │
 │         └────────┬────────┘         │
 │                  ▼                  │
 │         Reciprocal Rank Fusion      │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│  ZIM Archive                        │
-│  (Retrieve relevant text chunks)    │
 └──────┬──────────────────────────────┘
-        │
-        ▼
+       │
+       ▼
 ┌─────────────────────────────────────┐
-│  Context Augmentation               │
+│  Neural Reranking                    │
+│  (CrossEncoder: ms-marco-MiniLM)    │
+│  (Reranks top candidates)            │
+└──────┬──────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────┐
+│  Context Augmentation                │
 │  (Combine query + retrieved chunks) │
 └──────┬──────────────────────────────┘
        │
