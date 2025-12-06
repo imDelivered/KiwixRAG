@@ -25,6 +25,19 @@ else
     PYTHON_CMD="python3"
 fi
 
-# Launch chatbot GUI (suppress terminal output)
-"$PYTHON_CMD" "$SCRIPT_DIR/run_chatbot.py" "$@" > /dev/null 2>&1
+# Check if --debug flag is present
+DEBUG_MODE=false
+for arg in "$@"; do
+    if [ "$arg" = "--debug" ]; then
+        DEBUG_MODE=true
+        break
+    fi
+done
+
+# Launch chatbot GUI (suppress terminal output unless debug mode)
+if [ "$DEBUG_MODE" = true ]; then
+    "$PYTHON_CMD" "$SCRIPT_DIR/run_chatbot.py" "$@"
+else
+    "$PYTHON_CMD" "$SCRIPT_DIR/run_chatbot.py" "$@" > /dev/null 2>&1
+fi
 

@@ -5,13 +5,23 @@ from typing import List, Iterable
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
-from chatbot.config import OLLAMA_CHAT_URL, STRICT_RAG_MODE
+from chatbot.config import OLLAMA_CHAT_URL, STRICT_RAG_MODE, DEBUG
 from chatbot.models import Message
+
+
+def debug_print(msg: str):
+    if DEBUG:
+        print(f"[DEBUG] {msg}")
 
 
 def stream_chat(model: str, messages: List[dict]) -> Iterable[str]:
     """Stream chat with Ollama model."""
-    payload = json.dumps({"model": model, "messages": messages, "stream": True}).encode("utf-8")
+    payload = json.dumps({
+        "model": model, 
+        "messages": messages, 
+        "stream": True,
+        "options": {"temperature": 0}
+    }).encode("utf-8")
     req = Request(OLLAMA_CHAT_URL, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
     try:
@@ -37,7 +47,12 @@ def stream_chat(model: str, messages: List[dict]) -> Iterable[str]:
 
 def full_chat(model: str, messages: List[dict]) -> str:
     """Full chat with Ollama model."""
-    payload = json.dumps({"model": model, "messages": messages, "stream": False}).encode("utf-8")
+    payload = json.dumps({
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": 0}
+    }).encode("utf-8")
     req = Request(OLLAMA_CHAT_URL, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
     try:
@@ -79,28 +94,41 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
     context_text = ""
     rag = get_rag_system()
     
+    # 1. Detect Intent
+    from chatbot.intent import detect_intent
     # Identify the actual query. If user_query is provided, use it.
     # Otherwise check the last message in history if it's from user.
     query_text = user_query
     if not query_text and history and history[-1].role == 'user':
         query_text = history[-1].content
         
-    if rag and query_text:
+    intent = detect_intent(query_text or "")
+    debug_print(f"build_messages: Detected Intent='{intent.mode_name}', Should Retrieve={intent.should_retrieve}")
+    
+    # 2. Retrieve context (If Intent allows)
+    context_text = ""
+    rag = get_rag_system()
+        
+    if rag and query_text and intent.should_retrieve:
         try:
-            results = rag.retrieve(query_text, top_k=3)
+            results = rag.retrieve(query_text, top_k=5)
+            debug_print(f"build_messages: RAG returned {len(results)} results")
+            
             if results:
                 context_text = "\n\nRelevant Context via RAG:\n"
                 for i, r in enumerate(results, 1):
                     meta = r['metadata']
                     text = r['text']
                     title = meta.get('title', 'Unknown')
+                    score = r.get('score', 0.0)
+                    debug_print(f"build_messages: result_{i} title='{title}', score={score:.4f}, text_length={len(text)}")
                     context_text += f"\n--- Source {i}: {title} ---\n{text}\n"
                 
                 context_text += "\nInstructions: Answer the user's question using ONLY the provided context above. \n" \
                                 "Verify your answer with the context.\n" \
-                                "CITE SOURCES STRICTLY using the headers provided (e.g., 'Source 1: Tupac Shakur').\n" \
-                                "DO NOT generate or hallucinate bibliography entries like 'CNN' or 'LA Times' unless they are explicitly mentioned in the text body as quotes.\n" \
-                                "If the answer is not in the context, state that you do not know."
+                                "CITE SOURCES STRICTLY using the headers provided (e.g., 'Source 1: Article Title').\n" \
+                                "DO NOT generate or hallucinate bibliography entries.\n" \
+                                "If the provided text contains a list but not the specific answer (e.g. 'largest' but only small items listed), state that the information is missing."
             else:
                 if STRICT_RAG_MODE:
                     context_text = "\n[SYSTEM NOTICE]: No relevant documents found in the local index.\n" \
@@ -111,8 +139,8 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
         except Exception as e:
             print(f"RAG retrieval error: {e}")
 
-    # 2. Augment system prompt
-    final_system_prompt = system_prompt
+    # 3. Augment system prompt with Context AND Intent Instructions
+    final_system_prompt = system_prompt + intent.system_instruction
     if context_text:
         final_system_prompt += context_text
 
@@ -123,5 +151,3 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
             
     print(f"\n🧠 Generating response...")
     return messages
-
-

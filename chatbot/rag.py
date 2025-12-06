@@ -201,7 +201,7 @@ class RAGSystem:
         self.faiss_index.add(embeddings.astype('float32'))
 
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Hybrid retrieval with Just-In-Time indexing."""
+        """Hybrid retrieval with Just-In-Time indexing and Reranking."""
         if not self.faiss_index or not self.bm25:
              pass # Logic handled in init/load
         
@@ -253,7 +253,7 @@ class RAGSystem:
         if self.faiss_index and self.faiss_index.ntotal > 0:
             try:
                 q_emb = self.encoder.encode([query]).astype('float32')
-                k_search = min(top_k * 2, self.faiss_index.ntotal)
+                k_search = min(top_k * 4, self.faiss_index.ntotal) # Fetch more for reranking
                 D, I = self.faiss_index.search(q_emb, k_search)
                 dense_hits = {idx: rank for rank, idx in enumerate(I[0])}
                 print(f"✅ Dense retrieval found {len(dense_hits)} hits.")
@@ -270,7 +270,7 @@ class RAGSystem:
             try:
                 tokenized_query = query.split(" ")
                 sparse_scores = self.bm25.get_scores(tokenized_query)
-                sparse_indices = np.argsort(sparse_scores)[::-1][:top_k * 2]
+                sparse_indices = np.argsort(sparse_scores)[::-1][:top_k * 4] # Fetch more for reranking
                 sparse_hits = {idx: rank for rank, idx in enumerate(sparse_indices)}
                 print(f"✅ Sparse retrieval found {len(sparse_hits)} hits.")
             except Exception as e: 
@@ -279,7 +279,7 @@ class RAGSystem:
         else:
             print("⚠️ BM25 index not available for sparse retrieval.")
             
-        # 3. Reciprocal Rank Fusion
+        # 3. Reciprocal Rank Fusion (Initial Filter)
         print("융 Combining results with RRF...")
         fused_scores = {}
         all_indices = set(dense_hits.keys()) | set(sparse_hits.keys())
@@ -294,11 +294,47 @@ class RAGSystem:
                 score += 1 / (k + sparse_hits[idx])
             fused_scores[idx] = score
             
-        sorted_hits = sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        # Get top 20 candidates for Reranking
+        top_candidates = sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)[:20]
         
+        # 4. Neural Reranking
+        print("⚖️  Reranking candidates...")
+        reranked_results = []
+        try:
+            from sentence_transformers import CrossEncoder
+            # Load small efficient cross-encoder
+            reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', max_length=512)
+            
+            pairs = []
+            candidate_indices = []
+            
+            for idx, _ in top_candidates:
+                if idx < len(self.doc_chunks):
+                    text = self.doc_chunks[idx]
+                    pairs.append([query, text])
+                    candidate_indices.append(idx)
+            
+            if pairs:
+                scores = reranker.predict(pairs)
+                
+                for i, score in enumerate(scores):
+                    idx = candidate_indices[i]
+                    reranked_results.append((idx, float(score)))
+                
+                # Sort by new scores
+                reranked_results.sort(key=lambda x: x[1], reverse=True)
+                reranked_results = reranked_results[:top_k]
+                print(f"✅ Reranking complete. Top score: {reranked_results[0][1]:.4f}")
+            else:
+                 reranked_results = top_candidates[:top_k]
+                 
+        except Exception as e:
+            print(f"⚠️ Reranker failed (or not installed), falling back to RRF: {e}")
+            reranked_results = top_candidates[:top_k]
+
         results = []
         print("\n📄 Semantic Search Results:")
-        for idx, score in sorted_hits:
+        for idx, score in reranked_results:
             if idx < len(self.doc_chunks):
                 doc = self.documents[idx]
                 print(f"   - {doc['title']} (Score: {score:.4f})")
