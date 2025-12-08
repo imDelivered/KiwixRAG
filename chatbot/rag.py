@@ -254,13 +254,32 @@ class RAGSystem:
         self.faiss_index.add(embeddings.astype('float32'))
 
     def retrieve(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Hybrid retrieval with Just-In-Time indexing and Reranking."""
+        """Hybrid retrieval with Just-In-Time indexing and Reranking.
+        
+        EPHEMERAL INDEXING: Each call creates a fresh JIT index to prevent
+        state bleed between queries. Only articles relevant to THIS query
+        are indexed and searched.
+        """
         debug_print("=" * 70)
         debug_print(f"RETRIEVE CALLED: query='{query}', top_k={top_k}")
-        debug_print(f"FAISS index status: {self.faiss_index is not None}, BM25 status: {self.bm25 is not None}")
         
-        if not self.faiss_index or not self.bm25:
-            debug_print("WARNING: FAISS or BM25 index not available")
+        # === EPHEMERAL INDEX RESET ===
+        # Reset JIT-specific state to ensure query isolation.
+        # This prevents vectors from previous queries contaminating results.
+        debug_print("EPHEMERAL RESET: Clearing JIT index state...")
+        self.faiss_index = None  # Will be re-created if articles are found
+        self.doc_chunks = []     # Fresh chunks for this query only
+        self.documents = []      # Fresh metadata for this query only
+        self.indexed_paths = set()  # Reset path tracking
+        self._chunk_id = 0       # Reset chunk ID counter for metadata alignment
+        debug_print("EPHEMERAL RESET COMPLETE: faiss_index=None, doc_chunks=[], documents=[], indexed_paths={}")
+        
+        # Note: BM25 is NOT reset - it's a pre-built corpus index (if loaded).
+        # For JIT-only mode, BM25 will also be empty/None.
+        debug_print(f"BM25 status (pre-built corpus): {self.bm25 is not None}")
+        
+        if not self.bm25:
+            debug_print("Note: No pre-built BM25 index available (JIT-only mode)")
             pass 
         
         print(f"\nProcessing Query: '{query}'")
@@ -388,6 +407,19 @@ class RAGSystem:
         except Exception as e:
             print(f"JIT Error: {e}")
             debug_print(f"JIT EXCEPTION: {type(e).__name__}: {e}")
+
+        # === EPHEMERAL GUARD: Early Return if No Articles Indexed ===
+        # If no articles were JIT-indexed for this query, return empty immediately.
+        # This prevents searching a stale index from previous queries.
+        if self.faiss_index is None or self.faiss_index.ntotal == 0:
+            debug_print("=" * 70)
+            debug_print("EPHEMERAL GUARD: No articles indexed for this query.")
+            debug_print("Returning empty results to prevent state bleed.")
+            debug_print("=" * 70)
+            print("No relevant articles found for this query. Cannot retrieve context.")
+            return []  # Return empty - no context flag
+
+        debug_print(f"JIT indexing complete. FAISS now contains {self.faiss_index.ntotal} vectors from {len(self.indexed_paths)} articles.")
 
         # 1. Dense Retrieval
         debug_print("-" * 70)
@@ -604,14 +636,71 @@ class RAGSystem:
             tokens = clean_query.split()
             debug_print(f"Query tokens: {tokens}")
             
+            # Extended stop words: includes instructional/generic terms
             stopwords = {
-                "how", "what", "when", "who", "where", "why", "is", "are", "do", "did", "does", "can", "could",
-                "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "about",
-                "tell", "me", "explain", "describe", "define", "show", "list", "give"
+                # Question words
+                "how", "what", "when", "who", "where", "why", "which",
+                # Common verbs
+                "is", "are", "was", "were", "do", "did", "does", "can", "could", "would", "should", "has", "have", "had",
+                # Articles & conjunctions
+                "the", "a", "an", "and", "or", "but", "if", "then",
+                # Prepositions
+                "in", "on", "at", "to", "for", "of", "with", "by", "about", "from", "into",
+                # Instructional words (common false positive triggers)
+                "tell", "me", "explain", "describe", "define", "show", "give", "find", "get",
+                "introduced", "features", "list", "main", "what", "overview", "details", "information",
+                # Comparison words
+                "comparing", "compare", "difference", "different", "between", "versus", "vs", "summary",
+                # Format words
+                "markdown", "table", "graph", "chart", "json", "html", "code", "format",
+                # Common filler
+                "some", "any", "all", "many", "most", "other", "such", "very", "just", "also", "only"
             }
             
-            keywords = [w for w in tokens if w.lower() not in stopwords]
-            debug_print(f"Extracted keywords: {keywords}")
+            # === WEIGHTED KEYWORD SCORER ===
+            # Score each token by importance:
+            # - Base Score: 1.0
+            # - Capitalization Bonus: ×3.0 if starts uppercase and not first word
+            # - Length Penalty: ×0.5 if word length < 4
+            # - Stop Word Penalty: score = 0
+            
+            scored_keywords = []
+            for i, w in enumerate(tokens):
+                # Stop Word Penalty: score = 0 (skip entirely)
+                if w.lower() in stopwords:
+                    debug_print(f"  Skipping stop word: '{w}'")
+                    continue
+                
+                # Base Score
+                score = 1.0
+                
+                # Capitalization Bonus: ×3.0 if uppercase and not first word of sentence
+                # This prioritizes named entities like "Volvo", "XC90", "Tungsten"
+                if len(w) > 0 and w[0].isupper() and i > 0:
+                    score *= 3.0
+                    debug_print(f"  Capitalization bonus for '{w}': score now {score}")
+                
+                # Length Penalty: ×0.5 if word is short (< 4 chars)
+                # This deprioritizes short generic words
+                if len(w) < 4:
+                    score *= 0.5
+                    debug_print(f"  Length penalty for '{w}': score now {score}")
+                
+                # Keep all-caps words (acronyms like "NASA", "XC90", "U2")
+                if w.isupper() and len(w) >= 2:
+                    score = max(score, 3.0)  # Ensure acronyms score highly
+                    debug_print(f"  Acronym boost for '{w}': score now {score}")
+                
+                scored_keywords.append((w, score))
+                debug_print(f"  Keyword '{w}' scored: {score}")
+
+            # Sort by Importance Score (High to Low)
+            scored_keywords.sort(key=lambda x: x[1], reverse=True)
+            debug_print(f"Sorted keywords by importance: {scored_keywords}")
+            
+            # Always select top 3 high-scoring keywords
+            keywords = [w for w, s in scored_keywords[:3]]
+            debug_print(f"Selected top 3 keywords: {keywords}")
             
             hits_map = {} 
             

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.0.1] - 2025-01-XX
+
+### Fixed
+- **Ephemeral Indexing (State Isolation)**: Fixed critical "State Bleed" bug where context from previous queries (e.g., Python's founder) polluted subsequent answers (e.g., Rome's population). The Retrieval Phase now triggers a hard reset of the FAISS index, chunk metadata, and document store before every single query, ensuring 100% context hygiene between turns.
+- **Retrieval Blindness**: Fixed issue where generic words (e.g., "features", "introduced") drowned out specific entities (e.g., "Volvo", "XC90") in search results.
+- **Fuzzy Title Matching**: Fixed false negatives where the Scorer rejected valid articles due to name ordering (e.g., "Steven Spielberg" vs "Spielberg, Steven"). Added normalization and substring matching to the Article Scorer validation logic.
+- **JSON Parsing Crashes**: Fixed constant ValueError crashes in Joint 1 & 3 caused by Llama 1B outputting Markdown code blocks, conversational filler, or "JSON Lines" format. Replaced standard json.loads with a robust helper that uses regex to extract content between {} or [] and automatically wraps multiple JSON objects in brackets if the model outputs a stream.
+- **Parrot Bug**: Fixed issue where Qwen 0.5B would output example titles ("Article Name 1") or hallucinate titles based on the user query. The Scorer now strictly filters the LLM output against the original_candidates list, silently discarding any title that wasn't in the search results.
+
+### Changed
+- **Weighted Keyword Scoring**: Implemented a scoring algorithm for search tokens:
+    - Capitalized Words: 3.0x Score Boost (Prioritizes Proper Nouns)
+    - Stop Words: 0.0 Score (Aggressively filters "markdown", "table", "json")
+    - Short Words (<4 chars): 0.5x Penalty
+- **Exact Match Override**: If an extracted entity perfectly matches a Wikipedia title, its score is forced to 11.0 (bypassing the Scorer threshold). This prevents the "Isotope Distraction" (e.g., choosing Tungsten-156 over Tungsten).
+- **Entity Extraction**: Now handles List vs Dictionary outputs gracefully without falling back to raw query mode.
+- **Chunk Filtering**: Joint 3 no longer fails to default ordering; it successfully filters noise from dense articles (proven by the "Tungsten Melting Point" and "Swallow Airspeed" tests).
+
 ## [2.0.0] - 2025-12-06
 
 ### Major Features

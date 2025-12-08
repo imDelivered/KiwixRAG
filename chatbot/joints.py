@@ -12,7 +12,8 @@ the retrieval process and prevent hallucinations:
 import sys
 import json
 import time
-from typing import Dict, List, Tuple, Optional
+import re
+from typing import Dict, List, Tuple, Optional, Any
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -23,6 +24,55 @@ def debug_print(joint_name: str, msg: str):
     """Print debug message for a specific joint."""
     if config.DEBUG:
         print(f"[DEBUG:{joint_name}] {msg}", file=sys.stderr)
+
+
+def extract_json_from_text(text: str) -> Any:
+    """
+    Robustly extract the first valid JSON object or array from text.
+    Handles Markdown code blocks, conversational filler, and nested structures.
+    """
+    if not text:
+        raise ValueError("Empty text input")
+
+    # 1. Try to find JSON in Markdown code blocks first
+    code_block_pattern = r'```(?:json)?\s*(?P<content>.*?)\s*```'
+    match = re.search(code_block_pattern, text, re.DOTALL)
+    if match:
+        content = match.group('content')
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass # Fallback to scanning raw text if block content is invalid
+
+    # 2. Heuristic scan for looking for first '{' or '['
+    # We use a simple counter to find the matching closing brace/bracket
+    # This avoids issues where regex gets confused by nested braces
+    
+    start_indices = [m.start() for m in re.finditer(r'[\[\{]', text)]
+    
+    for start_idx in start_indices:
+        opener = text[start_idx]
+        closer = '}' if opener == '{' else ']'
+        
+        stack = 1
+        for i in range(start_idx + 1, len(text)):
+            char = text[i]
+            # Simple stack logic; ignores string scraping for brevity but usually sufficient for LLM outputs
+            # For a perfect parser we'd need to track string state to ignore braces inside strings, 
+            # but standard json.loads will catch invalid syntax anyway.
+            if char == opener:
+                stack += 1
+            elif char == closer:
+                stack -= 1
+            
+            if stack == 0:
+                potential_json = text[start_idx : i + 1]
+                try:
+                    return json.loads(potential_json)
+                except json.JSONDecodeError:
+                    break # Try next starting point
+                    
+    raise ValueError("No valid JSON found in response")
 
 
 def ollama_call(model: str, prompt: str, temperature: float = 0.0, timeout: int = 5) -> str:
@@ -106,14 +156,16 @@ Do not include any examples. Return ONLY the JSON object.
             response = ollama_call(self.model, prompt, self.temperature, config.JOINT_TIMEOUT)
             debug_print("JOINT1:ENTITY", f"Raw response: {response[:200]}...")
             
-            # Extract JSON from response (handle cases where model adds text)
-            json_start = response.find('{')
-            json_end = response.rfind('}') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                result = json.loads(json_str)
-            else:
-                raise ValueError("No JSON found in response")
+            # Use robust extractor
+            result = extract_json_from_text(response)
+            
+            # Fix for Issue 1: Joint 1 Entity Extraction Crash (Type Mismatch)
+            # If the model returns a list (e.g. [{"entity": ...}]), take the first item.
+            if isinstance(result, list):
+                if result:
+                    result = result[0]
+                else:
+                     raise ValueError("Received empty list from model")
             
             # Validate result structure
             required_keys = ['entity', 'entity_type', 'action', 'aliases']
@@ -171,56 +223,120 @@ class ArticleScorerJoint:
         debug_print("JOINT2:SCORER", f"Scoring {len(article_titles)} articles for entity '{entity_info['entity']}'")
         start_time = time.time()
         
+        # === EXACT MATCH OVERRIDE ===
+        # Before LLM scoring, check for exact entity matches
+        # These get score 11.0 (above max 10) to guarantee inclusion
+        entity_name = entity_info['entity'].lower().strip()
+        exact_match_scores = []
+        
+        for title in article_titles:
+            if title.lower().strip() == entity_name:
+                debug_print("JOINT2:SCORER", f"EXACT MATCH OVERRIDE: '{title}' == entity '{entity_info['entity']}' -> score 11.0")
+                exact_match_scores.append((title, 11.0))
+        
+        debug_print("JOINT2:SCORER", f"Found {len(exact_match_scores)} exact entity matches")
+        
         # Format article titles for prompt (limit to prevent token overflow)
         articles_formatted = "\n".join([f"{i+1}. {title}" for i, title in enumerate(article_titles[:20])])
         
-        prompt = f"""Score how relevant these Wikipedia articles are to answering a question about this entity.
-
-Entity: {entity_info['entity']}
-Type: {entity_info['entity_type']}
-Question about: {entity_info['action']}
-Also known as: {', '.join(entity_info['aliases'])}
-
-Articles:
-{articles_formatted}
-
-Rate each article 0-10 where:
-- 10 = Perfect match, exactly what we need
-- 7-9 = Highly relevant
-- 4-6 = Somewhat relevant
-- 1-3 = Barely relevant  
-- 0 = Not relevant
-
-Return ONLY a JSON array in this exact format:
-[
-  {{"title": "Article Name", "score": 10}},
-  {{"title": "Another Article", "score": 5}}
-]
-
-Return ALL articles with scores. No explanation, only JSON."""
+        prompt = f"""I will give you a list of Article Titles.
+        You must select the ones relevant to the query: "{entity_info['action']}" ('{entity_info['entity']}')
+        
+        RULES:
+        1. ONLY select titles from the provided INPUT LIST below.
+        2. DO NOT output example titles.
+        3. Output valid JSON only.
+        
+        INPUT LIST:
+        {articles_formatted}
+        
+        Rate each article 0-10 where:
+        - 10 = Perfect match
+        - 0 = Not relevant
+        
+        Return ONLY a JSON array:
+        [
+          {{"title": "Actual Title From List", "score": 10}}
+        ]"""
 
         try:
             response = ollama_call(self.model, prompt, self.temperature, config.JOINT_TIMEOUT)
             debug_print("JOINT2:SCORER", f"Raw response: {response[:200]}...")
             
-            # Extract JSON array
-            json_start = response.find('[')
-            json_end = response.rfind(']') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                scores = json.loads(json_str)
-            else:
-                raise ValueError("No JSON array found in response")
+            # Use robust extractor
+            scores = extract_json_from_text(response)
             
-            # Convert to list of tuples and sort
-            scored_articles = [(item['title'], float(item['score'])) for item in scores]
+            if not isinstance(scores, list):
+                 raise ValueError("Response is not a JSON array")
+
+            # --- VALIDATION & FILTERING ---
+            # Helper: Normalize a title for fuzzy matching
+            def normalize_title(t: str) -> str:
+                """Lowercase and remove commas/punctuation for comparison."""
+                return re.sub(r'[,.:;\'"-]+', '', t.lower()).strip()
+            
+            def fuzzy_match(llm_title: str, candidates: List[str]) -> Optional[str]:
+                """
+                Try to match llm_title to a candidate using fuzzy matching.
+                Returns the original candidate title if matched, None otherwise.
+                """
+                norm_llm = normalize_title(llm_title)
+                for candidate in candidates:
+                    norm_cand = normalize_title(candidate)
+                    # Exact normalized match
+                    if norm_llm == norm_cand:
+                        return candidate
+                    # Substring match (either direction)
+                    if norm_cand in norm_llm or norm_llm in norm_cand:
+                        return candidate
+                return None
+            
+            # 1. Verification Set: Only allow titles that match candidates (fuzzy)
+            valid_titles = list(article_titles)
+            
+            # 2. Placeholder Pattern: reject titles with suspicious placeholder names
+            placeholder_pattern = re.compile(r'article\s+name|title\s+\d+|example\s+article', re.IGNORECASE)
+            
+            scored_articles = []
+            for item in scores:
+                llm_title = item.get('title')
+                score = float(item.get('score', 0))
+                
+                # Check 1: Must match original list (exact or fuzzy)
+                if llm_title in valid_titles:
+                    matched_title = llm_title  # Exact match
+                else:
+                    matched_title = fuzzy_match(llm_title, valid_titles)
+                    if matched_title:
+                        debug_print("JOINT2:SCORER", f"Fuzzy matched: '{llm_title}' -> '{matched_title}'")
+                    else:
+                        debug_print("JOINT2:SCORER", f"Filtered hallucination: '{llm_title}' (not in candidates)")
+                        continue
+                    
+                # Check 2: Must not be a placeholder
+                if placeholder_pattern.search(matched_title):
+                    debug_print("JOINT2:SCORER", f"Filtered placeholder: '{matched_title}'")
+                    continue
+                
+                scored_articles.append((matched_title, score))
+            
+            # Sort by score
             scored_articles.sort(key=lambda x: x[1], reverse=True)
             
-            elapsed = time.time() - start_time
-            debug_print("JOINT2:SCORER", f"Scored {len(scored_articles)} articles in {elapsed:.2f}s")
-            debug_print("JOINT2:SCORER", f"Top 5 scores: {scored_articles[:5]}")
+            # === MERGE EXACT MATCH OVERRIDES ===
+            # Prepend exact matches to ensure they're always in top results
+            # Avoid duplicates by filtering out titles already in exact_match_scores
+            exact_titles = {t for t, _ in exact_match_scores}
+            scored_articles = [item for item in scored_articles if item[0] not in exact_titles]
+            final_results = exact_match_scores + scored_articles
             
-            return scored_articles[:top_k]
+            debug_print("JOINT2:SCORER", f"After exact match merge: {len(final_results)} total articles")
+            
+            elapsed = time.time() - start_time
+            debug_print("JOINT2:SCORER", f"Scored {len(final_results)} valid articles in {elapsed:.2f}s")
+            debug_print("JOINT2:SCORER", f"Top 5 scores: {final_results[:5]}")
+            
+            return final_results[:top_k]
             
         except Exception as e:
             debug_print("JOINT2:SCORER", f"Scoring failed: {type(e).__name__}: {e}")
@@ -295,22 +411,74 @@ Rate ALL chunks. No explanation, only JSON."""
             response = ollama_call(self.model, prompt, self.temperature, config.JOINT_TIMEOUT)
             debug_print("JOINT3:FILTER", f"Raw response: {response[:200]}...")
             
-            # Extract JSON array
-            json_start = response.find('[')
-            json_end = response.rfind(']') + 1
-            if json_start >= 0 and json_end > json_start:
-                json_str = response[json_start:json_end]
-                scores = json.loads(json_str)
-            else:
-                raise ValueError("No JSON array found in response")
+            # Robust JSON Lines parsing helper
+            def parse_json_lines(raw: str) -> List[Dict]:
+                """
+                Parse JSON that may be an array, a single dict, or multiple
+                JSON objects separated by commas/newlines (JSON Lines).
+                """
+                # 1. Try standard parsing first
+                try:
+                    result = extract_json_from_text(raw)
+                    if isinstance(result, list):
+                        return result
+                    if isinstance(result, dict):
+                        # Got a single dict, try wrapping it
+                        debug_print("JOINT3:FILTER", "Got single dict, attempting wrap")
+                        pass  # Fall through to wrapping logic
+                except (ValueError, json.JSONDecodeError):
+                    pass  # Fall through to fallback
+                
+                # 2. Try wrapping the raw string in brackets
+                try:
+                    wrapped = f"[{raw.strip()}]"
+                    result = json.loads(wrapped)
+                    if isinstance(result, list):
+                        debug_print("JOINT3:FILTER", "Parsed via bracket wrapping")
+                        return result
+                except json.JSONDecodeError:
+                    pass  # Fall through to regex
+                
+                # 3. Regex fallback: find all JSON objects individually
+                debug_print("JOINT3:FILTER", "Using regex fallback for JSON objects")
+                objects = []
+                # Match individual JSON objects (non-greedy)
+                for match in re.finditer(r'\{[^{}]*\}', raw):
+                    try:
+                        obj = json.loads(match.group())
+                        objects.append(obj)
+                    except json.JSONDecodeError:
+                        continue
+                
+                if objects:
+                    debug_print("JOINT3:FILTER", f"Regex extracted {len(objects)} objects")
+                    return objects
+                
+                raise ValueError("Could not parse any JSON from response")
+            
+            # Use robust JSON Lines parser
+            scores = parse_json_lines(response)
+            
+            # Handle wrapper object {"chunks": [...]}
+            if isinstance(scores, list) and len(scores) == 1 and isinstance(scores[0], dict) and "chunks" in scores[0]:
+                scores = scores[0]["chunks"]
+            elif isinstance(scores, dict) and "chunks" in scores:
+                scores = scores["chunks"]
+            
+            if not isinstance(scores, list):
+                 raise ValueError(f"Response is not a JSON array (got {type(scores).__name__})")
             
             # Create scored chunks list
             scored_chunks = []
             for item in scores:
-                chunk_idx = item['chunk_id'] - 1  # Convert to 0-indexed
+                chunk_id = item.get('chunk_id')
+                if chunk_id is None:
+                    continue
+                    
+                chunk_idx = chunk_id - 1  # Convert to 0-indexed
                 if 0 <= chunk_idx < len(chunks):
                     chunk = chunks[chunk_idx].copy()
-                    chunk['relevance_score'] = float(item['score'])
+                    chunk['relevance_score'] = float(item.get('score', 0))
                     scored_chunks.append(chunk)
             
             # Sort by score and return top-k
