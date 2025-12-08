@@ -32,7 +32,6 @@ chmod +x setup.sh
 > - Installs Ollama
 > - Downloads AI models:
 >   - llama3.2:1b (default response model + Joint 1 & 3)
->   - llama3.1:1b (alternative response model, optional)
 >   - qwen2.5:0.5b (Joint 2: article scoring)
 >   - Hugging Face all-MiniLM-L6-v2 (embedding model, auto-downloaded on first use)
 > - Enables Ollama service
