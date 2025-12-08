@@ -30,7 +30,10 @@ class ChatbotGUI:
         
         self.model = model or DEFAULT_MODEL
         self.system_prompt = system_prompt or (
-            "You are a helpful, concise AI assistant. Provide clear, accurate answers."
+            "You are a helpful, thorough AI assistant. When provided with context, "
+            "you carefully read ALL of it to find the most accurate and complete answer. "
+            "You synthesize information from multiple sources when relevant and always verify "
+            "that your answer directly addresses what was asked."
         )
         self.streaming_enabled = streaming_enabled
         

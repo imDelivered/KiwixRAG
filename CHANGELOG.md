@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [2.0.2] - 2025-01-XX
+
+### Changed
+- **Enhanced System Prompts for Comprehensive Retrieval**: Improved system prompts to help the LLM process ALL retrieved information systematically:
+  - Added 4-step processing instructions (Identify Question Type → Search All Sources → Extract Answer → Verify)
+  - Enhanced base system prompt to emphasize thorough reading of all context
+  - Explicitly reminds LLM of the user's question to maintain focus
+  - Instructions guide HOW to process information without embedding answers
+- **Increased Retrieval Coverage**: 
+  - Increased `top_k` from 5 to **8 chunks** per query for more comprehensive context
+  - Increased article scoring from top 5 to **top 7 articles** per query for better coverage
+  - More articles indexed = more chunks available for selection
+
+### Improved
+- **Response Accuracy**: System now better extracts specific answers from retrieved context by:
+  - Teaching systematic question-type identification (what/who/when/where)
+  - Emphasizing reading ALL sources, not just the first fact encountered
+  - Providing step-by-step guidance for information extraction
+  - Maintaining focus on the specific question asked
+
 ## [2.0.1] - 2025-01-XX
 
 ### Fixed

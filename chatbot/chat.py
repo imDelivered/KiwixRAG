@@ -155,8 +155,8 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
     if rag and query_text and intent.should_retrieve:
         debug_print(f"Conditions met for RAG retrieval: rag={rag is not None}, query_text='{query_text}', should_retrieve={intent.should_retrieve}")
         try:
-            debug_print(f"Calling rag.retrieve with query='{query_text}', top_k=5")
-            results = rag.retrieve(query_text, top_k=5)
+            debug_print(f"Calling rag.retrieve with query='{query_text}', top_k=8")
+            results = rag.retrieve(query_text, top_k=8)
             debug_print(f"RAG retrieve returned {len(results)} results")
             
             if results:
@@ -170,11 +170,30 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
                     debug_print(f"Result {i}: title='{title}', score={score:.4f}, text_length={len(text)} chars")
                     context_text += f"\n--- Source {i}: {title} ---\n{text}\n"
                 
-                context_text += "\nInstructions: Answer the user's question using ONLY the provided context above. \n" \
-                                "Verify your answer with the context.\n" \
-                                "CITE SOURCES STRICTLY using the headers provided (e.g., 'Source 1: Article Title').\n" \
-                                "DO NOT generate or hallucinate bibliography entries.\n" \
-                                "If the provided text contains a list but not the specific answer (e.g. 'largest' but only small items listed), state that the information is missing."
+                context_text += f"\n\nCRITICAL INSTRUCTIONS FOR PROCESSING CONTEXT:\n" \
+                                f"STEP 1 - IDENTIFY THE QUESTION TYPE: First, determine what TYPE of information the user is asking for:\n" \
+                                f"  - If asking 'what is X?' or 'what is the X of Y?' → Find the DEFINITION or SPECIFIC VALUE of X\n" \
+                                f"  - If asking 'who invented X?' → Find the PERSON or ENTITY responsible\n" \
+                                f"  - If asking 'when did X happen?' → Find the DATE or TIME\n" \
+                                f"  - If asking 'where is X?' or 'what is the capital of X?' → Find the LOCATION or PLACE\n" \
+                                f"\n" \
+                                f"STEP 2 - SEARCH ALL SOURCES: Scan EVERY source above for information that matches the question type.\n" \
+                                f"  - Look for keywords related to the question (e.g., if asked about 'capital', search for 'capital' in each source)\n" \
+                                f"  - Do NOT stop at the first fact you see - continue reading all sources\n" \
+                                f"  - Information may appear in different forms (e.g., 'capital is X' or 'X is the capital')\n" \
+                                f"\n" \
+                                f"STEP 3 - EXTRACT THE ANSWER: Once you find the relevant information:\n" \
+                                f"  - Extract the SPECIFIC answer that matches the question type\n" \
+                                f"  - If multiple sources mention the same fact, that confirms it's correct\n" \
+                                f"  - Synthesize information from multiple sources if needed\n" \
+                                f"\n" \
+                                f"STEP 4 - VERIFY AND RESPOND:\n" \
+                                f"  - Verify your answer directly addresses what was asked\n" \
+                                f"  - Cite the source(s) where you found the information (e.g., 'Source 1: Article Title')\n" \
+                                f"  - If the answer is not in the context, state that clearly\n" \
+                                f"\n" \
+                                f"REMEMBER: The user's question is: '{query_text}'\n" \
+                                f"Your task is to find information in the sources above that answers THIS SPECIFIC QUESTION, not just any fact about the topic."
                 debug_print(f"Context assembled: {len(context_text)} chars total")
             else:
                 debug_print("No results returned from RAG")

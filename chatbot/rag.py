@@ -336,7 +336,8 @@ class RAGSystem:
             if self.use_joints and self.scorer_joint and entity_info and candidates:
                 debug_print("0d. Article scoring with Joint 2...")
                 candidate_titles = [c['metadata']['title'] for c in candidates]
-                scored_titles = self.scorer_joint.score(entity_info, candidate_titles, top_k=5)
+                # Increase to 7 articles to get more comprehensive coverage
+                scored_titles = self.scorer_joint.score(entity_info, candidate_titles, top_k=7)
                 
                 # Convert scored titles back to full candidate objects
                 title_to_candidate = {c['metadata']['title']: c for c in candidates}
@@ -346,9 +347,9 @@ class RAGSystem:
                 
                 debug_print(f"Joint 2 selected top {len(top_articles)} articles")
             else:
-                # Fallback: use all candidates (up to 5, sorted by semantic search)
+                # Fallback: use all candidates (up to 7, sorted by semantic search)
                 debug_print("0d. Skipping article scoring (joints disabled or no candidates)")
-                top_articles = candidates[:5]
+                top_articles = candidates[:7]
 
             if top_articles:
                 article_titles = [a['metadata']['title'] for a in top_articles]
