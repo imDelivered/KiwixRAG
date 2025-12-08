@@ -171,29 +171,22 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
                     context_text += f"\n--- Source {i}: {title} ---\n{text}\n"
                 
                 context_text += f"\n\nCRITICAL INSTRUCTIONS FOR PROCESSING CONTEXT:\n" \
-                                f"STEP 1 - IDENTIFY THE QUESTION TYPE: First, determine what TYPE of information the user is asking for:\n" \
-                                f"  - If asking 'what is X?' or 'what is the X of Y?' → Find the DEFINITION or SPECIFIC VALUE of X\n" \
-                                f"  - If asking 'who invented X?' → Find the PERSON or ENTITY responsible\n" \
-                                f"  - If asking 'when did X happen?' → Find the DATE or TIME\n" \
-                                f"  - If asking 'where is X?' or 'what is the capital of X?' → Find the LOCATION or PLACE\n" \
+                                f"STEP 1 - IDENTIFY THE QUESTION TYPE: Determine what specific fact is requested. \n" \
+                                f"  - IF determining a location/date/person: Only extract if EXPLICITLY stated in the text.\n" \
                                 f"\n" \
-                                f"STEP 2 - SEARCH ALL SOURCES: Scan EVERY source above for information that matches the question type.\n" \
-                                f"  - Look for keywords related to the question (e.g., if asked about 'capital', search for 'capital' in each source)\n" \
-                                f"  - Do NOT stop at the first fact you see - continue reading all sources\n" \
-                                f"  - Information may appear in different forms (e.g., 'capital is X' or 'X is the capital')\n" \
+                                f"STEP 2 - SEARCH SOURCES: Scan for the specific answer.\n" \
+                                f"  - IGNORE keywords if they are used in a different context (e.g. 'Capital' of a company vs 'Capital' of a country).\n" \
                                 f"\n" \
-                                f"STEP 3 - EXTRACT THE ANSWER: Once you find the relevant information:\n" \
-                                f"  - Extract the SPECIFIC answer that matches the question type\n" \
-                                f"  - If multiple sources mention the same fact, that confirms it's correct\n" \
-                                f"  - Synthesize information from multiple sources if needed\n" \
+                                f"STEP 3 - EXTRACT or REFUSE:\n" \
+                                f"  - If the EXACT answer is in the documents found above: Extract it.\n" \
+                                f"  - If the context describes the topic but does NOT contain the specific fact asked: YOU MUST REFUSE.\n" \
+                                f"  - DO NOT GUESS. DO NOT INFER. DO NOT USE EXTERNAL KNOWLEDGE for specific facts not in the text.\n" \
                                 f"\n" \
-                                f"STEP 4 - VERIFY AND RESPOND:\n" \
-                                f"  - Verify your answer directly addresses what was asked\n" \
-                                f"  - Cite the source(s) where you found the information (e.g., 'Source 1: Article Title')\n" \
-                                f"  - If the answer is not in the context, state that clearly\n" \
+                                f"STEP 4 - RESPOND:\n" \
+                                f"  - If found: Answer directly and cite the source.\n" \
+                                f"  - If NOT found: explicitly state 'I do not have enough information in the provided context to answer this question.'\n" \
                                 f"\n" \
-                                f"REMEMBER: The user's question is: '{query_text}'\n" \
-                                f"Your task is to find information in the sources above that answers THIS SPECIFIC QUESTION, not just any fact about the topic."
+                                f"REMEMBER: The user requires 1:1 fidelity with the provided ZIM information. Do not hallucinate facts."
                 debug_print(f"Context assembled: {len(context_text)} chars total")
             else:
                 debug_print("No results returned from RAG")
