@@ -147,6 +147,8 @@ class RAGSystem:
         # JIT Cache: {(zim_path, article_path): (chunks, embeddings)}
         self.jit_cache = {}
         
+
+        
     def load_resources(self):
         """Load models and indices if they exist."""
         print(f"Loading encoder: {self.model_name}...")
@@ -313,26 +315,38 @@ class RAGSystem:
         # Add to FAISS
         self.faiss_index.add(embeddings.astype('float32'))
 
-    def retrieve(self, query: str, top_k: int = 5) -> List[Dict]:
+    def retrieve(self, query: str, top_k: int = 5, rebound_depth: int = 0, extra_terms: List[str] = None) -> List[Dict]:
         """Hybrid retrieval with Just-In-Time indexing and Reranking.
         
         EPHEMERAL INDEXING: Each call creates a fresh JIT index to prevent
         state bleed between queries. Only articles relevant to THIS query
         are indexed and searched.
+        
+        Args:
+            query: User query
+            top_k: Number of results to return
+            rebound_depth: Recursion depth for adaptive RAG (0 = initial, 1 = rebound)
+            extra_terms: Additional search terms to force into the pipeline (used in rebound)
         """
+
+
         debug_print("=" * 70)
         debug_print(f"RETRIEVE CALLED: query='{query}', top_k={top_k}")
         
         # === EPHEMERAL INDEX RESET ===
         # Reset JIT-specific state to ensure query isolation.
         # This prevents vectors from previous queries contaminating results.
-        debug_print("EPHEMERAL RESET: Clearing JIT index state...")
-        self.faiss_index = None  # Will be re-created if articles are found
-        self.doc_chunks = []     # Fresh chunks for this query only
-        self.documents = []      # Fresh metadata for this query only
-        self.indexed_paths = set()  # Reset path tracking
-        self._chunk_id = 0       # Reset chunk ID counter for metadata alignment
-        debug_print("EPHEMERAL RESET COMPLETE: faiss_index=None, doc_chunks=[], documents=[], indexed_paths={}")
+        # SKIPS RESET if this is a rebound pass (we want to ADD to the index).
+        if rebound_depth == 0:
+            debug_print("EPHEMERAL RESET: Clearing JIT index state...")
+            self.faiss_index = None  # Will be re-created if articles are found
+            self.doc_chunks = []     # Fresh chunks for this query only
+            self.documents = []      # Fresh metadata for this query only
+            self.indexed_paths = set()  # Reset path tracking
+            self._chunk_id = 0       # Reset chunk ID counter for metadata alignment
+            debug_print("EPHEMERAL RESET COMPLETE: faiss_index=None, doc_chunks=[], documents=[], indexed_paths={}")
+        else:
+            debug_print(f"EPHEMERAL RESET SKIPPED (Rebound Depth: {rebound_depth}) - Maintaining index state.")
         
         # Note: BM25 is NOT reset - it's a pre-built corpus index (if loaded).
         # For JIT-only mode, BM25 will also be empty/None.
@@ -372,6 +386,11 @@ class RAGSystem:
                 # Fallback if entities list is empty
                 if not search_terms:
                     search_terms = [query]
+                
+                # REBOUND: Add extra terms if provided
+                if extra_terms:
+                    debug_print(f"Adding extra terms from rebound: {extra_terms}")
+                    search_terms.extend(extra_terms)
                 
                 debug_print(f"Is comparison query: {is_comparison}")
                 debug_print(f"Extracted {len(entities)} entities: {[e.get('name', '') for e in entities]}")
@@ -519,6 +538,15 @@ class RAGSystem:
         if self.faiss_index is None or self.faiss_index.ntotal == 0:
             debug_print("=" * 70)
             debug_print("EPHEMERAL GUARD: No articles indexed for this query.")
+            
+            # ADAPTIVE RAG: Trigger rebound if no articles found
+            if rebound_depth == 0 and self.use_joints and self.entity_joint:
+                print("No direct articles found. Expanding research...")
+                new_terms = self.entity_joint.suggest_expansion(query, search_terms)
+                if new_terms:
+                    print(f" Expanding Research: {new_terms}")
+                    return self.retrieve(query, top_k, rebound_depth=1, extra_terms=new_terms)
+            
             debug_print("Returning empty results to prevent state bleed.")
             debug_print("=" * 70)
             print("No relevant articles found for this query. Cannot retrieve context.")
@@ -698,6 +726,26 @@ class RAGSystem:
                 debug_print("Falling back to RRF scores")
                 reranked_results = top_candidates[:top_k]
 
+        # === ADAPTIVE RAG: QUALITY CHECK & REBOUND ===
+        # If results are poor, trigger a second pass with expanded terms
+        if rebound_depth == 0 and self.use_joints and self.entity_joint:
+            top_score = reranked_results[0][1] if reranked_results else 0.0
+            
+            # Condition: No results OR Max score is weak
+            if len(reranked_results) == 0 or top_score < config.ADAPTIVE_THRESHOLD:
+                debug_print(f"[ADAPTIVE] Quality Check Failed: top_score={top_score}, count={len(reranked_results)}")
+                print(f"Initial results weak (Score: {top_score:.2f}). Thinking deeper...")
+                
+                # Ask Joint 1 for help
+                new_terms = self.entity_joint.suggest_expansion(query, search_terms)
+                
+                if new_terms:
+                    print(f" Expanding Research: {new_terms}")
+                    # Recursive Call - Add new terms to existing index
+                    return self.retrieve(query, top_k, rebound_depth=1, extra_terms=new_terms)
+                else:
+                    debug_print("[ADAPTIVE] No expansion terms generated. Accepting fate.")
+
         results = []
         # 5. Fact Refinement (Joint 4)
         debug_print("-" * 70)
@@ -725,6 +773,7 @@ class RAGSystem:
                         item = entry.get_item()
                         full_text = TextProcessor.extract_text(item.content)
                         
+                        # 5a. Fact Extraction
                         extracted_facts = self.fact_joint.refine_facts(query, full_text)
                         
                         if extracted_facts:
@@ -732,6 +781,16 @@ class RAGSystem:
                             debug_print(f"Facts: {extracted_facts}")
                         else:
                             debug_print("No specific facts found.")
+                            
+                        # 5b. PREMISE VERIFICATION (Systems Fix)
+                        # Check strictly if the retrieved text supports the user's premise
+                        verification = self.fact_joint.verify_premise(query, full_text)
+                        if verification['status'] in ['CONTRADICTED', 'UNSUPPORTED']:
+                            debug_print(f"[SYSTEM ALERT] Premise check failed: {verification['status']}")
+                            print(f"Wait... {verification['reason']}")
+                            # Inject override as a fact
+                            extracted_facts.insert(0, f"[SYSTEM ALERT - PREMISE INCORRECT]: {verification['reason']}")
+
             except Exception as e:
                 debug_print(f"Joint 4 failed: {type(e).__name__}: {e}")
 
@@ -754,6 +813,86 @@ class RAGSystem:
         
         debug_print(f"RETRIEVE COMPLETE. Returning {len(results)} results")
         debug_print("=" * 70)
+        debug_print(f"RETRIEVE COMPLETE. Returning {len(results)} results")
+        debug_print("=" * 70)
+        return results
+
+    def retrieve_web(self, query: str, top_k: int = 5) -> List[Dict]:
+        """Experimental Online Retrieval Pipeline."""
+        print(f" ONLINE MODE: Searching the web for '{query}'...")
+        
+        # 1. Search
+        search_results = self.web_retriever.search(query, max_results=5)
+        if not search_results:
+            return []
+            
+        print(f"Found {len(search_results)} links. Scraping content safely...")
+        
+        # 2. Scrape & Chunk
+        self.jit_cache = {}
+        self.faiss_index = None # Reset index
+        self.doc_chunks = []
+        self.documents = []
+        self.indexed_paths = set()
+        
+        chunk_count = 0
+        
+        for res in search_results:
+            url = res.get('href')
+            title = res.get('title')
+            
+            try:
+                # Scrape safely
+                text = self.web_retriever.scrape_url_sandboxed(url)
+                if not text or len(text) < 100:
+                    continue
+                    
+                chunks = TextProcessor.chunk_text(text)
+                if chunks:
+                    # Index immediately (JIT style)
+                    import torch
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    if not self.encoder:
+                        self.encoder = SentenceTransformer(self.model_name, device=device)
+                        
+                    embeddings = self.encoder.encode(chunks, device=device, show_progress_bar=False, convert_to_numpy=True)
+                    
+                    if self.faiss_index is None:
+                         dimension = embeddings.shape[1]
+                         self.faiss_index = faiss.IndexFlatL2(dimension)
+                    
+                    self.faiss_index.add(embeddings.astype('float32'))
+                    self.doc_chunks.extend(chunks)
+                    for _ in chunks:
+                        self.documents.append({
+                            'title': title,
+                            'path': url,
+                            'source_zim': 'WEB'
+                        })
+                    
+                    chunk_count += len(chunks)
+                    print(f"  Scraped & Indexed: {title[:30]}... ({len(chunks)} chunks)")
+                    
+            except Exception as e:
+                debug_print(f"Failed to process {url}: {e}")
+                
+        if chunk_count == 0:
+            return []
+            
+        # 3. Dense Retrieval on the new web index
+        print(f"Retrieving relevant chunks from {chunk_count} web segments...")
+        q_emb = self.encoder.encode([query]).astype('float32')
+        D, I = self.faiss_index.search(q_emb, top_k)
+        
+        results = []
+        for i, idx in enumerate(I[0]):
+            if idx != -1 and idx < len(self.doc_chunks):
+                results.append({
+                    'text': self.doc_chunks[idx],
+                    'metadata': self.documents[idx],
+                    'score': float(D[0][i])
+                })
+                
         return results
 
     def search_by_title(self, query: str, zim_path: str = None, full_text: bool = False) -> List[Dict]:

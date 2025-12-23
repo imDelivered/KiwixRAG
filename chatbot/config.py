@@ -27,5 +27,8 @@ FACT_JOINT_TEMP = 0.0
 # Joint Timeout (not used for local inference but kept for compat)
 JOINT_TIMEOUT = 10
 
+# Adaptive RAG Configuration
+ADAPTIVE_THRESHOLD = 4.0  # If max score is below this, trigger expansion
+
 
 

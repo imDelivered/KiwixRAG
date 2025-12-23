@@ -60,9 +60,21 @@ def detect_intent(query: str) -> IntentResult:
         # Strategy: If it looks like a general skill, skip RAG. If it looks like a Specific Entity query, use RAG.
         # For simplicity in this prototype: Tutorials enable RAG (knowledge is helpful) but change the Style.
         
+        # Strategy: If it looks like a general skill, skip RAG. If it looks like a Specific Entity query, use RAG.
+        # For simplicity in this prototype: Tutorials enable RAG (knowledge is helpful) but change the Style.
+        
         return IntentResult(
             should_retrieve=True,
-            system_instruction="\nMODE: TUTORIAL\nStructure your answer as a clear, step-by-step tutorial. Use numbered lists, bold headers, and explain concepts simply like a teacher.",
+            system_instruction=(
+                "\nMODE: TUTORIAL\n"
+                "OBJECTIVE: Provide a structured, easy-to-follow guide.\n"
+                "LAYOUT RULES:\n"
+                "1. TITLE: Start with a clear H1 title (e.g. '# How to...')\n"
+                "2. OVERVIEW: Brief summary (1-2 sentences).\n"
+                "3. STEPS: Use numbered lists for actions (1. **Do this**...).\n"
+                "4. FORMATTING: Use **bold** for key terms/buttons. Use `code blocks` for commands.\n"
+                "5. TONE: Helpful, instructional, and encouraging."
+            ),
             mode_name="TUTORIAL"
         )
         

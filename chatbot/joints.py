@@ -76,6 +76,7 @@ def extract_json_from_text(text: str) -> Any:
     raise ValueError("No valid JSON found in response")
 
 
+def local_inference(model: str, prompt: str, temperature: float = 0.0, timeout: int = 5) -> str:
     """
     Run local inference using ModelManager.
     """
@@ -135,7 +136,8 @@ class EntityExtractorJoint:
     CRITICAL RULES:
     - Return ONLY valid JSON.
     - NO Markdown code blocks (do not use ```json).
-    - NO conversational filler (e.g., "Here is the JSON").
+    - NO conversational filler.
+    - IGNORE generic terms like "guy", "man", "woman", "person", "someone" unless part of a Proper Title.
     - RAW JSON STRING ONLY.
 
     Return this exact JSON structure:
@@ -213,6 +215,52 @@ class EntityExtractorJoint:
                 }],
                 "action": "information"
             }
+            
+    def suggest_expansion(self, query: str, failed_terms: List[str]) -> List[str]:
+        """
+        Suggest alternative search terms when initial search fails.
+        
+        Args:
+            query: User's original query
+            failed_terms: List of terms that returned no results
+            
+        Returns:
+            List of new search terms (strings)
+        """
+        debug_print("JOINT1:EXPAND", f"Suggesting expansion for '{query}' (failed: {failed_terms})")
+        start_time = time.time()
+        
+        prompt = f"""The user asked about: "{query}"
+        
+        We searched for these terms but found NOTHING relevant: {failed_terms}
+        
+        INSTRUCTIONS:
+        1. Suggest 3 alternative search queries.
+        2. Focus on broader concepts, related events, or key figures.
+        3. If the user used a nickname, try the real name.
+        4. If the user asked a specific question, try searching for the general topic.
+        
+        Return ONLY a JSON list of strings:
+        ["Alternative 1", "Alternative 2", "Alternative 3"]
+        """
+        
+        try:
+            response = local_inference(self.model, prompt, temperature=0.3, timeout=config.JOINT_TIMEOUT)
+            debug_print("JOINT1:EXPAND", f"Raw response: {response[:200]}...")
+            
+            suggestions = extract_json_from_text(response)
+            
+            if isinstance(suggestions, list):
+                # Filter out duplicates and empty strings
+                filtered = [s for s in suggestions if isinstance(s, str) and s.strip() and s not in failed_terms]
+                debug_print("JOINT1:EXPAND", f"Generated {len(filtered)} suggestions: {filtered}")
+                return filtered[:3]
+                
+            return []
+            
+        except Exception as e:
+            debug_print("JOINT1:EXPAND", f"Expansion failed: {e}")
+            return []
 
 
 class ArticleScorerJoint:
@@ -713,4 +761,60 @@ JSON Response:"""
         except Exception as e:
             debug_print("JOINT4:FACTS", f"Fact extraction failed: {e}")
             return []
+
+    def verify_premise(self, query: str, text_content: str) -> Dict[str, str]:
+        """
+        Check if the text actually supports the user's premise.
+        
+        Args:
+            query: User query (e.g. "Was Tesla a CIA agent?")
+            text_content: Content of the top relevant article
+            
+        Returns:
+            Dict: {'status': 'SUPPORTED'|'UNSUPPORTED'|'CONTRADICTED', 'reason': '...'}
+        """
+        if not text_content:
+            return {'status': 'UNSUPPORTED', 'reason': 'No data found'}
+            
+        debug_print("JOINT4:VERIFY", f"Verifying premise for: '{query}'")
+        start_time = time.time()
+        
+        # Truncate for speed
+        context_window = text_content[:2000]
+        
+        prompt = f"""Analyze if the text supports the premise in the user's query.
+
+Query: "{query}"
+
+Text:
+{context_window}
+
+INSTRUCTIONS:
+1. Identify the core premise (e.g. "Tesla worked for CIA").
+2. Check if the text explicitly supports, explicitly contradicts, or simply doesn't mention it.
+3. Be skeptical. If the text says "FBI seized papers" and the user asks "Did CIA seize papers?", the answer is CONTRADICTED (because it was FBI, not CIA).
+
+Return JSON ONLY:
+{{
+  "premise": "The user assumes X...",
+  "status": "SUPPORTED" | "CONTRADICTED" | "UNSUPPORTED",
+  "reason": "The text says Y instead of X."
+}}
+"""
+        
+        try:
+            response = local_inference(self.model, prompt, self.temperature, config.JOINT_TIMEOUT)
+            debug_print("JOINT4:VERIFY", f"Raw response: {response[:200]}...")
+            
+            result = extract_json_from_text(response)
+            
+            if isinstance(result, dict) and 'status' in result:
+                debug_print("JOINT4:VERIFY", f"Result: {result['status']} ({result.get('reason')})")
+                return result
+                
+            return {'status': 'UNSUPPORTED', 'reason': 'Could not verify'}
+            
+        except Exception as e:
+            debug_print("JOINT4:VERIFY", f"Verification failed: {e}")
+            return {'status': 'UNSUPPORTED', 'reason': 'Error during verification'}
 

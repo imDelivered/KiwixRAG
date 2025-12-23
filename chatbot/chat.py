@@ -78,6 +78,7 @@ def full_chat(model: str, messages: List[dict]) -> str:
             temperature=0.3,
             repeat_penalty=1.2
         )
+        debug_print(f"RAW LLM RESP: {resp}")
         
         return resp['choices'][0]['message']['content']
             
@@ -205,21 +206,36 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
         debug_print(f"Conditions met for RAG retrieval: rag={rag is not None}, query_text='{query_text}', should_retrieve={intent.should_retrieve}")
         try:
             _update_status("Searching knowledge base")
-            debug_print(f"Calling rag.retrieve with query='{query_text}', top_k=8")
-            results = rag.retrieve(query_text, top_k=8)
+            debug_print(f"Calling rag.retrieve with query='{query_text}', top_k=4")
+            results = rag.retrieve(query_text, top_k=4)
             _update_status("Processing results")
             debug_print(f"RAG retrieve returned {len(results)} results")
             
             if results:
                 debug_print("Processing RAG results...")
                 context_text = "\n\nRelevant Context via RAG:\n"
+                total_context_chars = 0
+                max_context_chars = 16000 # ~4000 tokens, leaving plenty for generation
+                
                 for i, r in enumerate(results, 1):
                     meta = r['metadata']
                     text = r['text']
                     title = meta.get('title', 'Unknown')
                     score = r.get('score', 0.0)
+                    
+                    # Truncate extremely long chunks just in case
+                    if len(text) > 4000:
+                        text = text[:4000] + "...(truncated)"
+                    
+                    chunk_text = f"\n--- Source {i}: {title} ---\n{text}\n"
+                    
+                    if total_context_chars + len(chunk_text) > max_context_chars:
+                        debug_print(f"Context limit reached ({max_context_chars} chars). Stopping at result {i}.")
+                        break
+                        
+                    context_text += chunk_text
+                    total_context_chars += len(chunk_text)
                     debug_print(f"Result {i}: title='{title}', score={score:.4f}, text_length={len(text)} chars")
-                    context_text += f"\n--- Source {i}: {title} ---\n{text}\n"
                 
                 # Append verified facts found by Joint 4
                 facts_list = results[0].get('search_context', {}).get('facts', []) if results else []
@@ -234,10 +250,11 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
                 context_text += f"\n\nCRITICAL INSTRUCTIONS:\n" \
                                 f"1. USE THE CONTEXT: Answer based ONLY on the provided context above.\n" \
                                 f"2. BE ACCURATE: Do not make up facts. If the answer isn't there, say 'I don't know' and STOP.\n" \
-                                f"3. HANDLE CONFLICTS: If context has conflicting info, state BOTH sides. Do NOT debate yourself (e.g. 'But wait').\n" \
-                                f"4. NO REPETITION: State your answer ONCE and STOP. Do NOT add a summary or 'Therefore' conclusion.\n" \
-                                f"5. FOLLOW LAYOUT RULES: See the MODE instructions below for how to format your answer.\n" \
-                                f"6. IGNORE IRRELEVANT TEXT: The context may contain unrelated articles. Focus only on what answers the question."
+                                f"3. VERIFY PREMISES: If the user asks a leading question (e.g., 'When did X do Y?') and the context says X *never* did Y, you MUST correct the premise. Do NOT assume the user is right.\n" \
+                                f"4. HANDLE CONFLICTS: If context has conflicting info, state BOTH sides. Do NOT debate yourself (e.g. 'But wait').\n" \
+                                f"5. NO REPETITION: State your answer ONCE and STOP. Do NOT add a summary or 'Therefore' conclusion.\n" \
+                                f"6. FOLLOW LAYOUT RULES: See the MODE instructions below for how to format your answer.\n" \
+                                f"7. IGNORE IRRELEVANT TEXT: The context may contain unrelated articles. Focus only on what answers the question."
                 debug_print(f"Context assembled: {len(context_text)} chars total")
             else:
                 debug_print("No results returned from RAG")

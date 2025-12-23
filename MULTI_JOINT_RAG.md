@@ -179,3 +179,23 @@ krag "how did tupac die?"
 ---
 
 **Result**: Significantly improved retrieval quality with manageable latency increase.
+
+## New Features (v2.0)
+
+### 1. Adaptive RAG (Rebound Loop)
+The system now includes a self-healing "Rebound Loop" for vague queries.
+- **Trigger**: If retrieved articles have low relevance scores (< 4.0) or zero results.
+- **Action**: Joint 1 generates 3 alternative search terms (synonyms, broader topics).
+- **Result**: The system recursively searches with these new terms and merges the results.
+- **Benefit**: Fixes queries like "the big ship that sank" -> searches "RMS Titanic".
+
+### 2. Experimental Premise Verification (Systems Fix)
+To prevent "Sycophancy" (AI agreeing with false premises), we added a mechanical gate:
+- **Phase 5**: Before generating an answer, Joint 4 (Fact Refinement) scans the verified text.
+- **Check**: "Does the text support the user's premise?"
+- **Action**: If the premise is CONTRADICTED (e.g., User: "Was Tesla CIA?" vs Text: "FBI investigated Tesla"), the system forces a [SYSTEM ALERT] into the context.
+- **Result**: The final verification step guarantees the AI corrects the user instead of hallucinating agreement.
+
+### 3. Entity Disambiguation Updates
+- Improved EntityExtractorJoint to ignore generic terms ("guy", "man") unless part of a proper noun.
+- Added strict verify_premise methods to joints.py.
