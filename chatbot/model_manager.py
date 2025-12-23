@@ -27,7 +27,10 @@ class ModelManager:
         Ensure the model exists locally. varying quantization support.
         Downloads the best available GGUF if not found.
         """
-        model_dir = "/media/dekko/space/KiwixRAG-main/shared_models"
+        # Determine path relative to this file (chatbot/model_manager.py -> project_root/shared_models)
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(current_dir)
+        model_dir = os.path.join(project_root, "shared_models")
         os.makedirs(model_dir, exist_ok=True)
         
         # 1. Check if we already have a suitable file for this repo
