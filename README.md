@@ -12,6 +12,7 @@
 **No cloud. No API keys. No data leaves your machine.**
 
 ---
+<img width="895" height="697" alt="Screenshot_20260108_200832" src="https://github.com/user-attachments/assets/a60de92a-38cf-42a8-bd31-ca96429d5bf5" />
 
 ## Key Features
 
