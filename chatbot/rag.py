@@ -161,6 +161,7 @@ class RAGSystem:
         self.use_joints = config.USE_JOINTS
         self.entity_joint = None
         self.scorer_joint = None
+        self.coverage_joint = None  # Joint 2.5: Coverage Verification
         self.filter_joint = None
         
         # JIT Cache: {(zim_path, article_path): (chunks, embeddings)}
@@ -218,12 +219,13 @@ class RAGSystem:
         if self.use_joints:
             debug_print("Initializing multi-joint RAG system...")
             try:
-                from chatbot.joints import EntityExtractorJoint, ArticleScorerJoint, ChunkFilterJoint, FactRefinementJoint
+                from chatbot.joints import EntityExtractorJoint, ArticleScorerJoint, CoverageVerifierJoint, ChunkFilterJoint, FactRefinementJoint
                 self.entity_joint = EntityExtractorJoint()
                 self.scorer_joint = ArticleScorerJoint()
+                self.coverage_joint = CoverageVerifierJoint()  # Joint 2.5: Coverage Verification
                 self.filter_joint = ChunkFilterJoint()
                 self.fact_joint = FactRefinementJoint()
-                debug_print("Joint system initialized successfully")
+                debug_print("Joint system initialized successfully (including Coverage Verifier)")
             except Exception as e:
                 debug_print(f"Failed to initialize joints: {e}")
                 debug_print("Falling back to semantic search")
@@ -483,7 +485,40 @@ class RAGSystem:
                 debug_print("No article candidates found")
                 print("No direct title matches found.")
             
-            # 0e. JIT Indexing for top articles
+            # === 0e. COVERAGE VERIFICATION (JOINT 2.5) ===
+            # Check if all extracted entities are represented in selected articles
+            if self.use_joints and self.coverage_joint and entity_info and top_articles:
+                debug_print("0e. Running coverage verification (Joint 2.5)...")
+                coverage = self.coverage_joint.verify_coverage(entity_info, top_articles)
+                
+                if not coverage['complete']:
+                    print(f"Coverage gap detected: {coverage['missing']}")
+                    debug_print(f"Missing entities: {coverage['missing']}")
+                    debug_print(f"Suggested searches: {coverage['suggested_searches']}")
+                    
+                    # Run targeted secondary searches for missing entities
+                    for search_term in coverage['suggested_searches']:
+                        debug_print(f"Secondary search for: '{search_term}'")
+                        extra_candidates = self.search_by_title(search_term, full_text=True)
+                        added_count = 0
+                        for c in extra_candidates[:3]:  # Take top 3 per missing entity
+                            t = c['metadata']['title']
+                            if t not in seen_titles:
+                                top_articles.append(c)
+                                seen_titles.add(t)
+                                added_count += 1
+                                print(f" [Filling Gap] Added: '{t}'")
+                                debug_print(f"Added gap-fill article: '{t}'")
+                        if added_count > 0:
+                            break  # Stop after successfully adding articles for this entity
+                    
+                    # Log final article list after gap-fill
+                    final_titles = [a['metadata']['title'] for a in top_articles]
+                    debug_print(f"Articles after gap-fill: {final_titles}")
+                else:
+                    debug_print("Coverage complete - all entities represented")
+            
+            # 0f. JIT Indexing for top articles
             debug_print("Checking top articles for JIT indexing...")
             for idx, cand in enumerate(top_articles):
                 path = cand['metadata'].get('path')

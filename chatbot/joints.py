@@ -529,6 +529,128 @@ class ArticleScorerJoint:
             return [(title, 5.0) for title in article_titles[:top_k]]
 
 
+class CoverageVerifierJoint:
+    """
+    Joint 2.5: Coverage Verification
+    
+    Checks if the selected articles cover all required entities.
+    For comparison queries, ensures each entity has at least one article.
+    If gaps are found, suggests targeted search terms.
+    
+    This joint does NOT use an LLM - it's a fast string-matching check
+    that triggers secondary searches only when coverage gaps are detected.
+    """
+    
+    def __init__(self):
+        debug_print("JOINT2.5:INIT", "CoverageVerifier initialized (no LLM required)")
+    
+    def verify_coverage(
+        self, 
+        entity_info: Dict, 
+        selected_articles: List[Dict]
+    ) -> Dict:
+        """
+        Verify that selected articles cover all necessary entities.
+        
+        Args:
+            entity_info: Output from EntityExtractorJoint
+            selected_articles: List of article candidates (with 'metadata' containing 'title')
+            
+        Returns:
+            {
+                'complete': bool,          # True if all entities are covered
+                'covered': List[str],      # Entities with matching articles
+                'missing': List[str],      # Entities without articles
+                'suggested_searches': List[str]  # Targeted search terms for missing
+            }
+        """
+        # Extract entity names from entity_info
+        entities = entity_info.get('entities', [])
+        entity_names = [e.get('name', '').strip() for e in entities if e.get('name')]
+        
+        # Also include aliases for matching
+        entity_aliases = {}
+        for e in entities:
+            name = e.get('name', '').strip()
+            if name:
+                entity_aliases[name] = [a.strip().lower() for a in e.get('aliases', []) if a]
+        
+        debug_print("JOINT2.5:VERIFY", f"Checking coverage for {len(entity_names)} entities: {entity_names}")
+        
+        # Get all article titles (normalized for matching)
+        article_titles = []
+        for article in selected_articles:
+            title = article.get('metadata', {}).get('title', '')
+            if title:
+                article_titles.append(title.lower().strip())
+        
+        debug_print("JOINT2.5:VERIFY", f"Selected articles: {article_titles}")
+        
+        # Check coverage for each entity
+        covered = []
+        missing = []
+        
+        for entity_name in entity_names:
+            entity_lower = entity_name.lower()
+            aliases = entity_aliases.get(entity_name, [])
+            
+            # Check if any article title contains this entity or its aliases
+            found = False
+            for title in article_titles:
+                # Direct match
+                if entity_lower in title:
+                    found = True
+                    debug_print("JOINT2.5:VERIFY", f"  ✓ '{entity_name}' found in '{title}'")
+                    break
+                # Alias match
+                for alias in aliases:
+                    if alias in title:
+                        found = True
+                        debug_print("JOINT2.5:VERIFY", f"  ✓ '{entity_name}' (alias '{alias}') found in '{title}'")
+                        break
+                if found:
+                    break
+            
+            if found:
+                covered.append(entity_name)
+            else:
+                missing.append(entity_name)
+                debug_print("JOINT2.5:VERIFY", f"  ✗ '{entity_name}' NOT FOUND in any selected article")
+        
+        # Generate suggested searches for missing entities
+        suggested_searches = []
+        for entity_name in missing:
+            # Try multiple search variations
+            suggested_searches.append(entity_name)  # Direct name
+            # Add context-aware variations based on entity type
+            for e in entities:
+                if e.get('name') == entity_name:
+                    entity_type = e.get('type', '').lower()
+                    if entity_type in ['technology', 'concept']:
+                        suggested_searches.append(f"{entity_name} (technology)")
+                    elif entity_type == 'event':
+                        suggested_searches.append(f"{entity_name} disaster")
+                        suggested_searches.append(f"{entity_name} incident")
+                    elif entity_type == 'person':
+                        suggested_searches.append(f"{entity_name} biography")
+                    break
+        
+        result = {
+            'complete': len(missing) == 0,
+            'covered': covered,
+            'missing': missing,
+            'suggested_searches': suggested_searches[:6]  # Limit to 6 suggestions
+        }
+        
+        if missing:
+            debug_print("JOINT2.5:VERIFY", f"Coverage INCOMPLETE: missing {missing}")
+            debug_print("JOINT2.5:VERIFY", f"Suggested searches: {suggested_searches}")
+        else:
+            debug_print("JOINT2.5:VERIFY", "Coverage COMPLETE: all entities found")
+        
+        return result
+
+
 class ChunkFilterJoint:
     """
     Joint 3: Chunk Filtering
