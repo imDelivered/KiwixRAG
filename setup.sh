@@ -150,7 +150,54 @@ echo "Installing optional Forge dependencies (PDF, DOCX support)..."
 ./venv/bin/pip install pypdf python-docx ebooklib markdown >> setup.log 2>&1 || true
 echo "✓ Document parsers installed"
 
+
+# 6. Desktop Integration
+echo "[6/6] Configuring Desktop Integration..."
+
+# Install Icon
+if [ -f "assets/icon.png" ]; then
+    sudo cp "assets/icon.png" "/usr/share/pixmaps/hermit.png"
+    echo "✓ Icon installed to /usr/share/pixmaps/hermit.png"
+else
+    echo "⚠️  Icon not found (assets/icon.png), skipping icon installation"
+fi
+
+# Create Hermit Desktop Entry
+HERMIT_DESKTOP="/usr/share/applications/hermit.desktop"
+sudo tee "$HERMIT_DESKTOP" > /dev/null << HERMIT_ENTRY
+[Desktop Entry]
+Name=Hermit AI
+Comment=Offline AI Chatbot
+Exec=/usr/local/bin/hermit
+Icon=hermit
+Type=Application
+Terminal=false
+Categories=Education;Science;Utility;AI;
+Keywords=AI;Chatbot;Offline;
+HERMIT_ENTRY
+echo "✓ Hermit menu entry created"
+
+# Create Forge Desktop Entry
+FORGE_DESKTOP="/usr/share/applications/forge.desktop"
+sudo tee "$FORGE_DESKTOP" > /dev/null << FORGE_ENTRY
+[Desktop Entry]
+Name=Hermit Forge
+Comment=Create ZIM Files
+Exec=/usr/local/bin/forge
+Icon=hermit
+Type=Application
+Terminal=false
+Categories=Development;Utility;
+FORGE_ENTRY
+echo "✓ Forge menu entry created"
+
+# Update desktop database if available
+if command -v update-desktop-database &> /dev/null; then
+    sudo update-desktop-database > /dev/null 2>&1 || true
+fi
+
 echo ""
 echo "=== Setup Complete! ==="
 echo "Run the chatbot with: hermit"
 echo "Create ZIM files with: forge"
+echo "(You can now launch these from your Application Menu)"

@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
-## [2.5.0] - 2026-01-11
+
+## [2.5.1] - 2026-01-12
+
+### Added
+- **Desktop Integration**: Added `.desktop` entries and icon installation during `setup.sh`. This allows Hermit and Forge to be launched via the system application launcher (Start Menu / KRunner) instead of just the terminal.
+
+### Fixed
+- **System Launcher Bug**: Fixed an issue where the `hermit` command was not detected by window managers (KDE, GNOME) because it lacked a standard `.desktop` file.
 
 ### Added
 - **API Mode Support**: New `api_client.py` module enables Hermit to connect to external OpenAI-compatible servers (LM Studio, Ollama, vLLM, etc.) instead of using embedded llama-cpp-python.
