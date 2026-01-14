@@ -199,21 +199,83 @@ class EntityExtractorJoint:
 INSTRUCTIONS:
 1. Identify ALL distinct entities (people, places, things, events) in the query.
 2. For each entity, provide the NAME as it would appear as a Wikipedia article title.
-3. CHECK FOR COMPARISONS: If the user compares items (e.g. "vs", "compare", "difference"), set "is_comparison": true.
+3. CHECK FOR COMPARISONS: If the user compares items (e.g. "vs", "compare", "difference", "which is"), set "is_comparison": true.
 4. EXTRACT ALIASES: Include alternative names AND related Wikipedia article titles the entity might appear under.
+5. IDENTIFY ANSWER TYPE: What specific information does the user want? See examples below.
+6. FOR COMPARISONS: Extract the comparison_dimension - what aspect are they comparing on?
+
+ANSWER TYPE EXAMPLES (learn the pattern, not just keywords):
+- "When was X born?" → birthdate
+- "Where was X born?" → birthplace  
+- "What school did X attend?" → education
+- "Where did X study?" → education
+- "What degree does X have?" → education
+- "Who invented X?" → inventor
+- "Who created X?" → inventor
+- "When did X die?" → death_date
+- "How did X die?" → death_cause
+- "What language did X speak/write?" → language
+- "How tall is X?" → measurement
+- "How big is X?" → measurement
+- "What caused X?" → cause
+- "Why did X happen?" → cause
+- General questions → general
+
+COMPARISON DIMENSION EXAMPLES:
+- "which came first" → creation_date
+- "which is older" → age
+- "which is larger/bigger" → size
+- "which is taller" → height
+- "which is faster" → speed
+- "who had more X" → quantity
+- "which was more successful" → success
+
+EXAMPLES:
+Query: "Who created Python?"
+Result: {{
+  "is_comparison": false,
+  "entities": [
+    {{"name": "Python (programming language)", "type": "technology", "aliases": ["Python"]}},
+    {{"name": "creator of Python", "type": "person", "aliases": []}}
+  ],
+  "action": "identify the creator"
+}}
+
+Query: "Compare Tesla and Edison patents"
+Result: {{
+  "is_comparison": true,
+  "entities": [
+    {{"name": "Nikola Tesla", "type": "person", "aliases": ["Tesla"]}},
+    {{"name": "Thomas Edison", "type": "person", "aliases": ["Edison"]}}
+  ],
+  "action": "compare patent counts",
+  "comparison_dimension": "quantity"
+}}
+
+Query: "What university did the creator of Python attend?"
+Result: {{
+  "is_comparison": false,
+  "entities": [
+    {{"name": "Python (programming language)", "type": "technology", "aliases": ["Python"]}},
+    {{"name": "creator of Python", "type": "person", "aliases": []}}
+  ],
+  "action": "identify the university attended"
+}}
 
 WIKIPEDIA TITLE CONVENTIONS:
 - Full names for people: "Albert Einstein" not "Einstein"
 - Specific names for events: "World War II" not "the war"
 - Disambiguation when needed: "Java (programming language)" for the language
-- For indirect queries (e.g., "who created X"), extract BOTH the person AND the thing created
+- For indirect queries (e.g., "who created X"), extract BOTH the person AND the thing created. Do NOT guess the person's name yet.
 
 Query: "{query}"
 
 CRITICAL RULES:
 - Return ONLY valid JSON.
 - NO Markdown code blocks.
-- Entity names should match Wikipedia article titles exactly when possible.
+- Entity names should match Wikipedia article titles exactly if mentioned.
+- Do NOT try to answer the query. 
+- Do NOT resolve entities to specific names (like 'University of Cambridge') if they aren't explicitly in the query. For 'the creator of X', extract 'creator of X' or similar, not your guess of who it is.
 - Include short aliases that might also be article titles.
 
 Return this exact JSON structure:
@@ -222,7 +284,9 @@ Return this exact JSON structure:
   "entities": [
     {{"name": "Exact Wikipedia Article Title", "type": "person|place|event|concept|technology|organization", "aliases": ["Alternative Title", "Short Form"]}}
   ],
-  "action": "what the user wants to know"
+  "action": "what the user wants to know",
+  "answer_type": "birthdate|birthplace|education|inventor|death_date|death_cause|language|measurement|cause|general",
+  "comparison_dimension": "null or: creation_date|age|size|height|speed|quantity|success"
 }}
 """
 
@@ -632,12 +696,21 @@ class CoverageVerifierJoint:
         for entity_name in missing:
             # Try multiple search variations
             suggested_searches.append(entity_name)  # Direct name
+            
+            # Wikipedia disambiguation patterns - CRITICAL for finding specific topics
+            suggested_searches.append(f"{entity_name} (programming language)")
+            suggested_searches.append(f"{entity_name} (software)")
+            suggested_searches.append(f"{entity_name} (technology)")
+            suggested_searches.append(f"{entity_name} (person)")
+            suggested_searches.append(f"{entity_name} (band)")
+            
             # Add context-aware variations based on entity type
             for e in entities:
                 if e.get('name') == entity_name:
                     entity_type = e.get('type', '').lower()
                     if entity_type in ['technology', 'concept']:
                         suggested_searches.append(f"{entity_name} (technology)")
+                        suggested_searches.append(f"{entity_name} technology")
                     elif entity_type == 'event':
                         suggested_searches.append(f"{entity_name} disaster")
                         suggested_searches.append(f"{entity_name} incident")
@@ -649,7 +722,7 @@ class CoverageVerifierJoint:
             'complete': len(missing) == 0,
             'covered': covered,
             'missing': missing,
-            'suggested_searches': suggested_searches[:6]  # Limit to 6 suggestions
+            'suggested_searches': suggested_searches[:12]  # Limit to 12 suggestions (increased from 6)
         }
         
         if missing:
@@ -674,7 +747,7 @@ class ChunkFilterJoint:
         self.temperature = config.FILTER_JOINT_TEMP
         debug_print("JOINT3:INIT", f"ChunkFilter initialized with {self.model}")
     
-    def filter(self, query: str, chunks: List[Dict], top_k: int = 5, entity_info: Dict = None, mode: str = "FACTUAL") -> List[Dict]:
+    def filter(self, query: str, chunks: List[Dict], top_k: int = 5, entity_info: Dict = None, mode: str = "FACTUAL", answer_type: str = None) -> List[Dict]:
         """
         Filter chunks by query relevance.
         
@@ -684,6 +757,7 @@ class ChunkFilterJoint:
             top_k: Return top K relevant chunks
             entity_info: Optional entity info for comparison-aware filtering
             mode: Operational mode (e.g., "FACTUAL", "CODE")
+            answer_type: Specific type of answer sought (e.g. "birthplace", "inventor")
         """
         if not chunks:
             debug_print("JOINT3:FILTER", "No chunks to filter")
@@ -744,21 +818,22 @@ Return ONLY a JSON array:
             prompt = f"""Rate these text chunks for how well they answer this query.
 
 Query: {query}
+Specific Info Needed: {answer_type if answer_type else "General Information"}
 
 Chunks:
 {chunks_text}
 
 Rate each chunk 0-10 where:
-- 10 = Directly answers the query (Prioritize BIOGRAPHICAL/HISTORICAL facts for "who/what/when" queries)
-- 7-9 = Highly relevant context
-- 4-6 = Related information
-- 1-3 = Tangentially related (or fictional/pop-culture references for historical queries)
+- 10 = Contains the SPECIFIC INFO requested (e.g. if asking for "birthplace", chunk mentions "born in...")
+- 8-9 = Highly relevant context or answers the core question
+- 4-6 = Related information but misses the specific answer
+- 1-3 = Tangentially related
 - 0 = Not relevant
 
 CRITICAL RULES:
-1. If the query asks for HISTORICAL facts (e.g. "how did he die"), penalize chunks about Movies, Songs, or Pop Culture unless specifically asked for.
-2. A snippet from a "Film" article describing a plot should get a LOW score (1-3) if the user wants real history.
-3. A snippet from a "Biography" article describing real events should get a HIGH score (8-10).
+1. If 'Specific Info Needed' is defined (e.g. 'birthplace'), ONLY give high scores (9-10) to chunks containing that exact detail.
+2. A generic biography chunk should get a LOWER score (5-6) if it doesn't contain the specific requested fact.
+3. If the user asks "who invented X", a chunk saying "X was invented by Y" is a 10. A chunk describing X's features is a 4.
 
 Return ONLY a JSON array:
 [
@@ -866,7 +941,7 @@ Return ONLY a JSON array:
         Diversity-aware chunk selection that ensures coverage of all entities.
         
         For comparison queries, we need chunks from EACH entity to provide
-        a balanced answer.
+        a balanced answer. This implementation GUARANTEES per-entity representation.
         """
         debug_print("JOINT3:FILTER", f"Diversity filter: finding chunks for {len(entity_names)} entities")
         
@@ -877,14 +952,31 @@ Return ONLY a JSON array:
         for chunk in chunks:
             chunk_text = chunk.get('text', '').lower()
             chunk_title = chunk.get('metadata', {}).get('title', '').lower()
+            combined_text = chunk_text + " " + chunk_title
             matched = False
             
             for entity_name in entity_names:
-                # Check if chunk is about this entity (by text or title)
-                if entity_name in chunk_text or entity_name in chunk_title:
+                entity_lower = entity_name.lower()
+                # Check multiple matching strategies:
+                # 1. Exact entity name in text
+                # 2. Each word of multi-word entity (e.g., "Roman Empire" matches "Roman" or "Empire")
+                # 3. Title contains entity
+                entity_words = entity_lower.split()
+                
+                if entity_lower in combined_text:
                     entity_chunks[entity_name].append(chunk)
                     matched = True
                     break
+                elif len(entity_words) > 1:
+                    # For multi-word entities, check if primary word appears
+                    # "Roman Empire" -> check for "roman" or "empire"
+                    for word in entity_words:
+                        if len(word) > 3 and word in combined_text:  # Skip short words
+                            entity_chunks[entity_name].append(chunk)
+                            matched = True
+                            break
+                    if matched:
+                        break
             
             if not matched:
                 entity_chunks['other'].append(chunk)
@@ -893,31 +985,48 @@ Return ONLY a JSON array:
         for name, c_list in entity_chunks.items():
             debug_print("JOINT3:FILTER", f"  Entity '{name}': {len(c_list)} chunks")
         
-        # Allocate slots proportionally, but ensure minimum per entity
+        # STRICT QUOTA: Ensure minimum per entity BEFORE filling remainder
         num_entities = len(entity_names)
-        min_per_entity = max(1, top_k // (num_entities + 1))  # +1 for 'other'
+        if num_entities == 0:
+            return chunks[:top_k]
+        
+        # Calculate strict per-entity quota
+        strict_per_entity = max(1, top_k // num_entities)  # At least 1 per entity
         slots_remaining = top_k
         
         selected = []
+        entities_with_chunks = []
         
-        # First pass: select min_per_entity from each entity
+        # First pass: select strict_per_entity from each entity
         for entity_name in entity_names:
             entity_list = entity_chunks[entity_name]
-            to_take = min(min_per_entity, len(entity_list), slots_remaining)
-            selected.extend(entity_list[:to_take])
-            slots_remaining -= to_take
+            if entity_list:
+                entities_with_chunks.append(entity_name)
+                to_take = min(strict_per_entity, len(entity_list), slots_remaining)
+                selected.extend(entity_list[:to_take])
+                slots_remaining -= to_take
+                debug_print("JOINT3:FILTER", f"  Took {to_take} chunks for '{entity_name}'")
+            else:
+                debug_print("JOINT3:FILTER", f"  WARNING: No chunks found for '{entity_name}'")
         
         # Second pass: fill remaining slots with best remaining chunks
         if slots_remaining > 0:
-            # Collect all unused chunks
+            # Collect all unused chunks, prioritizing entities that got less than quota
             used_ids = {id(c) for c in selected}
             remaining = []
-            for name, c_list in entity_chunks.items():
-                for chunk in c_list:
+            
+            # First, try to get more from under-represented entities
+            for entity_name in entity_names:
+                for chunk in entity_chunks[entity_name]:
                     if id(chunk) not in used_ids:
                         remaining.append(chunk)
             
-            # Sort by RRF score if available, otherwise just take in order
+            # Then add 'other' chunks
+            for chunk in entity_chunks['other']:
+                if id(chunk) not in used_ids:
+                    remaining.append(chunk)
+            
+            # Sort by RRF score if available
             remaining.sort(key=lambda x: x.get('rrf_score', 0), reverse=True)
             selected.extend(remaining[:slots_remaining])
         
@@ -926,7 +1035,7 @@ Return ONLY a JSON array:
             if 'relevance_score' not in chunk:
                 chunk['relevance_score'] = 8.0 - (i * 0.5)  # Descending scores
         
-        debug_print("JOINT3:FILTER", f"Diversity filter selected {len(selected)} chunks")
+        debug_print("JOINT3:FILTER", f"Diversity filter selected {len(selected)} chunks from {len(entities_with_chunks)}/{len(entity_names)} entities")
         return selected
 
 
@@ -1069,3 +1178,232 @@ Return JSON ONLY:
         except Exception as e:
             debug_print("JOINT4:VERIFY", f"Verification failed: {e}")
             return {'status': 'UNSUPPORTED', 'reason': 'Error during verification'}
+
+
+class ComparisonJoint:
+    """
+    Joint 3.5: Comparison Synthesis
+    
+    Triggered ONLY for comparison queries.
+    Takes chunks from multiple entities and extracts SPECIFIC values for the comparison dimension.
+    Produces a structured 'Comparison Card' to inject into the final context.
+    """
+    
+    def __init__(self, model: str = None):
+        self.model = model or config.FACT_JOINT_MODEL
+        self.temperature = 0.0  # Precise extraction
+        debug_print("JOINT3.5:INIT", f"ComparisonJoint initialized with {self.model}")
+    
+    def synthesize_comparison(self, query: str, entities: List[str], dimension: str, chunks: List[Dict]) -> Dict:
+        """
+        Extract specific values for each entity regarding the dimension.
+        """
+        if not dimension or dimension == "null":
+            debug_print("JOINT3.5:WARN", "No dimension provided - relying on query intent")
+            dimension = "relevant attributes"
+            
+        debug_print("JOINT3.5:COMPARE", f"Comparing {entities} on dimension: '{dimension}'")
+        
+        # Prepare context for the joint
+        # Group chunks by entity if possible, or just dump them
+        chunks_text = "\n\n".join([f"[{i+1}] {c.get('text', '')[:500]}" for i, c in enumerate(chunks[:20])])
+        
+        prompt = f"""You are a data extraction engine.
+        
+Query: "{query}"
+Goal: Compare {entities} based on the query.
+
+CONTEXT:
+{chunks_text}
+
+INSTRUCTIONS:
+1. Identify the Comparison Dimension from the query (e.g. size, age, patents).
+2. Scan the context for SPECIFIC VALUES regarding this dimension for each entity.
+3. If values are different units, normalize them if possible.
+4. If a value is missing, state "N/A".
+5. Determine the winner/conclusion based strictly on these values.
+
+Return ONLY this JSON:
+{{
+  "dimension": "inferred dimension (e.g. size)",
+  "data": [
+    {{"entity": "Entity Name", "value": "extracted value (e.g. 1991, 100 meters, 500 patents)", "context_id": 1}},
+    {{"entity": "Entity Name", "value": "extracted value", "context_id": 3}}
+  ],
+  "conclusion": "Direct answer: X is greater/older/more than Y"
+}}
+"""
+        
+        try:
+            response = local_inference(self.model, prompt, self.temperature, config.JOINT_TIMEOUT, use_json_grammar=True)
+            debug_print("JOINT3.5:COMPARE", f"Raw response: {response[:200]}...")
+            
+            data = extract_json_from_text(response)
+            
+            if isinstance(data, dict):
+                debug_print("JOINT3.5:RESULT", f"Comparison extracted: {data.get('conclusion')}")
+                return data
+            
+            return None
+            
+        except Exception as e:
+            debug_print("JOINT3.5:ERROR", f"Failed to synthesize comparison: {e}")
+            return None
+
+
+class MultiHopResolverJoint:
+    """
+    Joint 0.5: Multi-Hop Resolution
+    
+    Detects indirect entity references (e.g., "the creator of Python") and resolves
+    them to actual entity names by extracting information from related articles.
+    
+    This enables multi-hop reasoning:
+    1. User asks: "What university did the creator of Python attend?"
+    2. Joint 0.5 detects "creator of Python" as an indirect reference
+    3. It reads the Python article and extracts "Guido van Rossum"
+    4. The search can now find Guido van Rossum's article for the actual answer
+    """
+    
+    INDIRECT_PATTERNS = [
+        r"the\s+(creator|inventor|founder|author|developer|designer)\s+of\s+(.+)",
+        r"who\s+(created|invented|founded|wrote|developed|designed)\s+(.+)",
+        r"(.+)'s\s+(creator|inventor|founder|author|developer|designer)",
+    ]
+    
+    def __init__(self, model: str = None):
+        self.model = model or config.ENTITY_JOINT_MODEL
+        self.temperature = 0.0
+        debug_print("JOINT0.5:INIT", f"MultiHopResolver initialized with {self.model}")
+    
+    def detect_indirect_references(self, entity_info: Dict) -> List[Dict]:
+        """
+        Check if any extracted entities are indirect references that need resolution.
+        
+        Returns list of entities that are indirect references with their target.
+        """
+        import re
+        indirect_entities = []
+        
+        entities = entity_info.get('entities', [])
+        # Create map of lower-case names to actual names for easy lookup
+        existing_names = {e.get('name', '').lower(): e.get('name', '') for e in entities if e.get('name')}
+        
+        for entity in entities:
+            name = entity.get('name', '').lower()
+            
+            # Check for common indirect reference patterns
+            for pattern in self.INDIRECT_PATTERNS:
+                match = re.search(pattern, name, re.IGNORECASE)
+                if match:
+                    # Extract the target entity (e.g., "Python" from "creator of Python")
+                    groups = match.groups()
+                    target = groups[-1].strip() if groups else None
+                    if target:
+                        # [IMPROVEMENT] Linking to existing entities
+                        # If we extracted "creator of Python" AND "Python (programming language)",
+                        # we should use "Python (programming language)" as the target, not just "Python".
+                        target_lower = target.lower()
+                        best_target = target
+                        
+                        # Check if any existing entity contains the target name (e.g. "python (programming language)" contains "python")
+                        # We prefer the longest match that contains the target word
+                        matches = [real_name for low_name, real_name in existing_names.items() if target_lower in low_name]
+                        if matches:
+                            # Sort by length descending to get most specific
+                            matches.sort(key=len, reverse=True)
+                            best_target = matches[0]
+                            debug_print("JOINT0.5:LINK", f"Refined target '{target}' -> '{best_target}' based on existing entities")
+
+                        indirect_entities.append({
+                            'indirect_entity': entity.get('name'),
+                            'relation': groups[0] if len(groups) > 1 else 'related to',
+                            'target': best_target,
+                            'original_entity': entity
+                        })
+                        debug_print("JOINT0.5:DETECT", f"Indirect reference found: '{entity.get('name')}' -> target '{best_target}'")
+                    break
+            
+            # Also check for entity type 'person' with name containing 'creator', 'inventor', etc.
+            if entity.get('type') == 'person':
+                for keyword in ['creator', 'inventor', 'founder', 'author', 'developer']:
+                    if keyword in name:
+                        # Try to extract the target from the name
+                        parts = name.split(keyword)
+                        if len(parts) > 1:
+                            target = parts[-1].replace(' of ', '').replace(' for ', '').strip()
+                            if target:
+                                # [IMPROVEMENT] Apply same linking logic
+                                target_lower = target.lower()
+                                best_target = target
+                                matches = [real_name for low_name, real_name in existing_names.items() if target_lower in low_name]
+                                if matches:
+                                    matches.sort(key=len, reverse=True)
+                                    best_target = matches[0]
+                                    debug_print("JOINT0.5:LINK", f"Refined target '{target}' -> '{best_target}' based on existing entities")
+
+                                indirect_entities.append({
+                                    'indirect_entity': entity.get('name'),
+                                    'relation': keyword,
+                                    'target': best_target,
+                                    'original_entity': entity
+                                })
+                                debug_print("JOINT0.5:DETECT", f"Indirect reference found: '{entity.get('name')}' -> target '{best_target}'")
+                        break
+        
+        return indirect_entities
+    
+    def resolve_indirect_reference(self, reference: Dict, article_text: str) -> Optional[str]:
+        """
+        Given an indirect reference and the article text of its target,
+        extract the actual entity name.
+        
+        Args:
+            reference: Dict with 'indirect_entity', 'relation', 'target'
+            article_text: Full text of the target article (e.g., Python article)
+            
+        Returns:
+            The resolved entity name (e.g., "Guido van Rossum") or None
+        """
+        relation = reference.get('relation', 'creator')
+        target = reference.get('target', '')
+        
+        prompt = f"""You are an entity extraction system. Your task is to find a specific person or entity.
+
+CONTEXT (from the article about "{target}"):
+{article_text[:8000]}
+
+QUESTION: Who is the {relation} of {target}?
+
+INSTRUCTIONS:
+1. Read the context carefully.
+2. Find the name of the {relation} of {target}.
+3. Return ONLY the full name (e.g., "Guido van Rossum"), nothing else.
+4. If multiple people are listed, return the FIRST/PRIMARY one.
+5. If not found, return "NOT FOUND".
+
+Answer:"""
+
+        try:
+            response = local_inference(self.model, prompt, self.temperature, config.JOINT_TIMEOUT)
+            
+            # Clean up response
+            response = response.strip().strip('"').strip("'").strip()
+            
+            # Filter out non-answers
+            if response.lower() in ['not found', 'unknown', 'n/a', 'none', '']:
+                debug_print("JOINT0.5:RESOLVE", f"Could not resolve '{reference['indirect_entity']}' from article")
+                return None
+            
+            # Basic validation - should look like a name (at least two words, starts with capital)
+            words = response.split()
+            if len(words) >= 1 and response[0].isupper():
+                debug_print("JOINT0.5:RESOLVE", f"Resolved '{reference['indirect_entity']}' -> '{response}'")
+                return response
+            else:
+                debug_print("JOINT0.5:RESOLVE", f"Invalid resolution result: '{response}'")
+                return None
+                
+        except Exception as e:
+            debug_print("JOINT0.5:ERROR", f"Failed to resolve indirect reference: {e}")
+            return None

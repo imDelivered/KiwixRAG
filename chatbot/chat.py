@@ -262,6 +262,7 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
     debug_print("RAG RETRIEVAL PHASE")
     context_text = ""
     rag = get_rag_system()
+    results = [] # Initialize to empty list to prevent UnboundLocalError
         
     if rag and query_text and intent.should_retrieve:
         debug_print(f"Conditions met for RAG retrieval: rag={rag is not None}, query_text='{query_text}', should_retrieve={intent.should_retrieve}")
@@ -298,6 +299,18 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
                     total_context_chars += len(chunk_text)
                     debug_print(f"Result {i}: title='{title}', score={score:.4f}, text_length={len(text)} chars")
                 
+                # Append Comparison Card (Joint 3.5)
+                comparison_data = results[0].get('search_context', {}).get('comparison_data')
+                if comparison_data:
+                    debug_print("Adding Comparison Card to context")
+                    context_text += "\n\n=== COMPARISON DATA CARD (Structured Synthesis) ===\n"
+                    context_text += f"Comparison Dimension: {comparison_data.get('dimension')}\n"
+                    context_text += f"Conclusion: {comparison_data.get('conclusion')}\n"
+                    context_text += "Data Points:\n"
+                    for item in comparison_data.get('data', []):
+                         context_text += f"- {item.get('entity')}: {item.get('value')} (Source Chunks)\n"
+                    context_text += "===================================================\n"
+
                 # Append verified facts found by Joint 4
                 facts_list = results[0].get('search_context', {}).get('facts', []) if results else []
                 
@@ -342,13 +355,21 @@ def build_messages(system_prompt: str, history: List[Message], user_query: str =
     
     # Define instructions clearly
     instructions = f"\n\nCRITICAL INSTRUCTIONS:\n" \
-                   f"1. USE THE CONTEXT: Answer based ONLY on the provided context below.\n" \
-                   f"2. BE ACCURATE: Do not make up facts. If the answer isn't there, say 'I don't know' and STOP.\n" \
-                   f"3. VERIFY PREMISES: If the user asks a leading question (e.g., 'When did X do Y?') and the context says X *never* did Y, you MUST correct the premise. Do NOT assume the user is right.\n" \
-                   f"4. HANDLE CONFLICTS: If context has conflicting info, state BOTH sides. Do NOT debate yourself (e.g. 'But wait').\n" \
-                   f"5. SYNTHESIZE: Combine the 'Verified Factual Details' and the 'Source' text to provide a complete, natural answer that directly addresses the user's question.\n" \
-                   f"6. KEEP IT CONCISE BUT COMPLETE: Do not be overly verbose, but ensure all relevant details answering 'How', 'Why', 'When', etc. are included.\n" \
-                   f"7. IGNORE IRRELEVANT TEXT: The context may contain unrelated articles. Focus only on what answers the question."
+                   f"1. PREFER CONTEXT: Answer based primarily on the provided context below.\n" \
+                   f"2. BE ACCURATE: Do not make up facts. You may use general knowledge to supplement context if needed.\n" \
+                   f"3. VERIFY PREMISES: If the user asks a leading question (e.g., 'When did X do Y?') and the context says X *never* did Y, you MUST correct the premise.\n" \
+                   f"4. HANDLE CONFLICTS: If context has conflicting info, state BOTH sides clearly.\n" \
+                   f"5. SYNTHESIZE: Combine the context with your knowledge to provide a complete, accurate answer.\n" \
+                   f"6. ANSWER THE QUESTION DIRECTLY: If asked 'where was X born?', answer with a LOCATION. If asked 'when?', answer with a DATE. Do not provide tangential information.\n" \
+                   f"7. FOR COMPARISONS: You MUST discuss BOTH entities being compared, not just one."
+
+    # [FIX] Answer Reinforcement for Multi-hop Queries
+    if results:
+        search_ctx = results[0].get('search_context', {})
+        answer_type = search_ctx.get('answer_type')
+        if answer_type and answer_type not in ['general', 'information', 'unknown', None]:
+            debug_print(f"Injecting prompt reinforcement for answer_type: '{answer_type}'")
+            instructions += f"\n8. **ANSWER THE SPECIFIC QUESTION**: The user specifically asked for **{answer_type}** information. You MUST include this specific detail (date, location, name, etc.) in your answer. Do not just summarize the entity's biography."
 
     final_system_prompt = system_prompt + intent.system_instruction + instructions
     

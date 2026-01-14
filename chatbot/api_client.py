@@ -66,6 +66,7 @@ class OpenAIClientWrapper:
             pass 
 
         try:
+            print(f"DEBUG: Requesting URL: {url}")
             if stream:
                 return self._stream_request(url, headers, payload)
             else:

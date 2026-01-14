@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [2.7.0] - 2026-01-14
+
+### Added
+- **Automated Model Download**: The setup script now automatically downloads all required AI models using `download_models.py`, ensuring the system is truly offline-ready immediately after installation.
+- **Robust Uninstall Script**: Updated `uninstall_gui.py` to fix a permission error (`pkexec` exit code 127) by using absolute paths for system commands and adding a sudo fallback.
+
+### Fixed
+- **Uninstall Permissions**: Fixed an issue where the uninstaller would fail to remove system files because it couldn't elevate permissions correctly.
+
 ## [2.6.0] - 2026-01-13
 
 ### Added

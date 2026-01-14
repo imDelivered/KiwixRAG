@@ -7,6 +7,7 @@ faiss-cpu
 rank_bm25
 beautifulsoup4
 huggingface-hub
+libzim
 
 # Local Inference
 llama-cpp-python

@@ -244,17 +244,21 @@ class UninstallerGUI:
         self.root.quit()
 
     def run_sudo_remove(self, path):
-        # Run sudo rm command
-        cmd = ["sudo", "rm", "-f", str(path)]
-        # This might fail if no gui sudo prompt, but apt/pkexec usually handles it 
-        # or it is run from a terminal that can prompt.
-        # Alternatively, we assume user runs uninstall script with rights or we fail.
-        # Using pkexec for gui prompt preferred if available
+        # Resolve absolute path for 'rm' to ensure pkexec finds it
+        rm_cmd = shutil.which("rm") or "/bin/rm"
+        
+        # 1. Try pkexec (GUI Prompt)
         if shutil.which("pkexec"):
-             subprocess.run(["pkexec", "rm", "-f", str(path)], check=True)
-        else:
-             # Fallback to sudo (terminal prompt)
-             subprocess.run(cmd, check=True)
+             try:
+                 subprocess.run(["pkexec", rm_cmd, "-f", str(path)], check=True)
+                 return
+             except subprocess.CalledProcessError:
+                 # User cancelled or it failed (exit code 127 etc)
+                 print(f"pkexec failed for {path}, falling back to sudo...")
+        
+        # 2. Fallback to sudo (Terminal Prompt)
+        # This will fail if not verified in terminal, but it's the last resort
+        subprocess.run(["sudo", rm_cmd, "-f", str(path)], check=True)
 
 if __name__ == "__main__":
     root = tk.Tk()

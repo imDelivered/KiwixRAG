@@ -204,15 +204,33 @@ class ModelManager:
                                      break
                              
                     if match_found and candidate_file:
-                        print(f"Found local cached model: {candidate_file}")
-                        return candidate_file
+                        # [FIX] Verify all shards if it's a split file
+                        import re
+                        is_valid = True
+                        split_check = re.search(r'(.*)-00001-of-(\d{5})\.gguf$', candidate_file)
+                        if split_check:
+                             base = split_check.group(1)
+                             total = int(split_check.group(2))
+                             print(f"Verifying {total} shards for {os.path.basename(candidate_file)}...")
+                             for i in range(1, total + 1):
+                                 shard = f"{base}-{i:05d}-of-{total:05d}.gguf"
+                                 if not os.path.exists(shard):
+                                     print(f"Missing shard: {os.path.basename(shard)}")
+                                     is_valid = False
+                                     break
+                        
+                        if is_valid:
+                            print(f"Found local cached model: {candidate_file}")
+                            return candidate_file
+                        else:
+                            print(f"Incomplete split model found. Re-triggering download logic.")
+                            # Fall through to download logic
                     else:
                         print(f"Skipping ambiguous local file(s) for {repo_id}")
                     
-                    if matches and len(existing_files) < 10: # Fallback if few models
-                         pass # Could fall through to download logic
-                    
-                    # If we are here, we didn't return a match. Continue to next quant preference or download.
+                    if matches and len(existing_files) < 10: 
+                         pass 
+
 
         # List files in repo (to find best quantization)
         try:
@@ -260,16 +278,41 @@ class ModelManager:
             _notify_progress("downloading", 0.0, f"{model_name} ({size_str})")
             print(f"Downloading {model_name} ({size_str})...")
             
-            # Download the model
-            path = hf_hub_download(
-                repo_id=repo_id, 
-                filename=selected_file, 
-                local_dir=model_dir
-            )
+            # Download the model (handle potential splits)
+            import re
+            split_match = re.search(r'(.*)-00001-of-(\d{5})\.gguf$', selected_file)
             
-            _notify_progress("ready", 1.0, size_str)
-            print(f"Model downloaded to: {path}")
-            return path
+            if split_match:
+                base_name = split_match.group(1)
+                total_parts = int(split_match.group(2))
+                print(f"Detected split GGUF ({total_parts} parts). Downloading all shards...")
+                
+                final_path = None
+                for i in range(1, total_parts + 1):
+                    shard_name = f"{base_name}-{i:05d}-of-{total_parts:05d}.gguf"
+                    _notify_progress("downloading", (i-1)/total_parts, f"Shard {i}/{total_parts}...")
+                    
+                    path = hf_hub_download(
+                        repo_id=repo_id,
+                        filename=shard_name,
+                        local_dir=model_dir
+                    )
+                    if i == 1:
+                        final_path = path
+                
+                _notify_progress("ready", 1.0, size_str)
+                return final_path
+            else:
+                # Single file download
+                path = hf_hub_download(
+                    repo_id=repo_id, 
+                    filename=selected_file, 
+                    local_dir=model_dir
+                )
+                
+                _notify_progress("ready", 1.0, size_str)
+                print(f"Model downloaded to: {path}")
+                return path
             
         except Exception as e:
             _notify_progress("error", -1, str(e))

@@ -22,10 +22,11 @@
 OLLAMA_CHAT_URL = "N/A" # Legacy/Deprecated
 # Local Model Repositories
 MODEL_ALETHEIA_3B = "Ishaanlol/Aletheia-Llama-3.2-3B" 
-MODEL_QWEN_7B = "Qwen/Qwen2.5-7B-Instruct-GGUF"
+MODEL_QWEN_1_5B = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"  # "Fast" Model
+MODEL_QWEN_7B = "Qwen/Qwen2.5-7B-Instruct-GGUF"      # "Smart" Model
 
 
-DEFAULT_MODEL = MODEL_ALETHEIA_3B  # Switched back to Aletheia for testing
+DEFAULT_MODEL = MODEL_QWEN_7B  # Switched back to Aletheia for testing
 STRICT_RAG_MODE = True
 DEBUG = False
 
@@ -38,11 +39,18 @@ API_MODEL_NAME = "local-model"  # Passed in API request
 # Multi-Joint RAG System Configuration
 USE_JOINTS = True
 
-# Joint Models - All use the fast Aletheia 3B model
-ENTITY_JOINT_MODEL = MODEL_ALETHEIA_3B
-SCORER_JOINT_MODEL = MODEL_ALETHEIA_3B
-FILTER_JOINT_MODEL = MODEL_ALETHEIA_3B
-FACT_JOINT_MODEL = MODEL_ALETHEIA_3B
+# === TIERED MODEL ARCHITECTURE ===
+# Fast Models (1.5B) for high-volume, low-complexity tasks
+# Smart Models (7B) for reasoning, logic, and synthesis
+
+ENTITY_JOINT_MODEL = MODEL_QWEN_1_5B
+SCORER_JOINT_MODEL = MODEL_QWEN_1_5B
+FILTER_JOINT_MODEL = MODEL_QWEN_1_5B
+
+# Reasoning Joints (7B)
+FACT_JOINT_MODEL = MODEL_QWEN_7B       # Verification requires logic
+MULTI_HOP_JOINT_MODEL = MODEL_QWEN_7B  # Resolving recursive entities requires logic
+COMPARISON_JOINT_MODEL = MODEL_QWEN_7B # Synthesizing comparisons requires logic
 
 # Joint Temperatures
 ENTITY_JOINT_TEMP = 0.1
@@ -51,7 +59,7 @@ FILTER_JOINT_TEMP = 0.1
 FACT_JOINT_TEMP = 0.0
 
 # Joint Timeout (not used for local inference but kept for compat)
-JOINT_TIMEOUT = 10
+JOINT_TIMEOUT = 30 # Increased for 7B model generation
 
 # Adaptive RAG Configuration
 ADAPTIVE_THRESHOLD = 4.0  # If max score is below this, trigger expansion
@@ -65,5 +73,3 @@ SYSTEM_PROMPT = (
     "You synthesize information from multiple sources when relevant and always verify "
     "that your answer directly addresses what was asked."
 )
-
-
