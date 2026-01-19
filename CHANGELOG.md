@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [3.0.0] - 2026-01-19
+
+### Major Architecture Change
+- **Zero-Index RAG System**: Completely replaced the FAISS/Embedding based JIT indexing with a direct "Shotgun" ZIM lookup system.
+  - **Instant Search**: No initial indexing time required.
+  - **LLM Title Generation**: Uses the LLM's world knowledge to predict article titles (e.g., "How did Tupac die?" -> `Tupac_Shakur`, `Murder_of_Tupac_Shakur`).
+  - **O(1) Lookup**: leveraging `libzim` for instant page retrieval.
+- **Multi-ZIM Support**: The system now automatically discovers and searches *all* `.zim` files in the installation directory simultaneously.
+
+### Changed
+- **Default Model**: Upgraded default model to **NVIDIA Llama-3.1-Nemotron-Nano-8B**. This model provides significantly better reasoning, world knowledge, and fact extraction compared to previous 1.5B/3B/7B models.
+- **Dependencies**: Removed `faiss-cpu`, `sentence-transformers`, and `rank_bm25`. The core system now relies purely on `libzim` and `llama-cpp-python`, making it lighter and easier to install.
+- **GUI**: Updated link display to show the source ZIM file for each result.
+
+### Added
+- **Smart Redirect Resolution**: The retrieval system now robustly handles ZIM redirects (e.g., automatically resolving `Linux_Kernel` -> `Linux_kernel`).
+- **Fact Refinement (Joint 4)**: Re-integrated the "Fact Refinement" joint to automatically extract and verify key facts from the retrieved ZIM content before passing it to the final generation context.
+- **HTML Cleaning**: Enhanced text processing to strip HTML, scripts, and styles from Wikipedia content, ensuring clean context for the LLM.
+
 ## [2.7.2] - 2026-01-14
 
 ### Changed
