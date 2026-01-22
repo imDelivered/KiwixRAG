@@ -14,7 +14,7 @@ offline ai chatbot for wikipedia and zim archives. no cloud, no api keys, no tra
 
 ### what hermit does differently
 
-i built a synergistic architecture that utilizes models of various types and sizes to structure reasoning pipelines. At an architectural level, that’s the core philosophy. But what have I actually built with it?
+a synergistic architecture that utilizes models of various types and sizes to structure reasoning pipelines. At an architectural level, that’s the core philosophy. But what have I actually built with it?
 
 I call it "Hermit."
 
