@@ -100,7 +100,7 @@ class DownloadProgressDialog:
         )
         self.progress_bar.pack(pady=(0, 10))
         
-        # Detail label (e.g., "Aletheia-3B (2.1 GB)")
+        # Detail label (e.g., "Model-Name (2.1 GB)")
         self.detail_label = tk.Label(
             frame, text="", font=("Arial", 10),
             bg=bg_color, fg=fg_color
@@ -567,8 +567,8 @@ class ChatbotGUI:
         models: List[Tuple[str, ModelPlatform]] = []
         
         # 1. Add models explicitly defined in Config
-        if hasattr(config, 'MODEL_ALETHEIA_3B'):
-            models.append((config.MODEL_ALETHEIA_3B, ModelPlatform.LOCAL))
+        if hasattr(config, 'MODEL_QWEN_3B'):
+            models.append((config.MODEL_QWEN_3B, ModelPlatform.LOCAL))
             
         # 2. Scan shared_models directory for manually downloaded GGUFs
         import os
@@ -674,8 +674,10 @@ class ChatbotGUI:
             display_name = re.sub(r'-(\d+)-of-(\d+)\.gguf$', '.gguf', display_name)
             
             # Apply human-readable labels for known model families
-            if "Aletheia" in display_name or "aletheia" in display_name:
-                display_name = "Aletheia 3B (Fast)"
+            if "qwen2.5-3b" in display_name.lower():
+                quant_match = re.search(r'(q\d+_k_[msl]|q[2-8]_0)', display_name, re.IGNORECASE)
+                quant = quant_match.group(1).upper() if quant_match else "Unknown"
+                display_name = f"Qwen 2.5 3B ({quant})"
             elif "qwen2.5-7b" in display_name.lower():
                 # Extract quantization if present
                 quant_match = re.search(r'(q\d+_k_[msl]|q[2-8]_0)', display_name, re.IGNORECASE)

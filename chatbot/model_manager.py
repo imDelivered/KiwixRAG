@@ -171,7 +171,7 @@ class ModelManager:
                     
                     # Heuristic: check if significant part of repo name is in filename
                     # For DarkIdol: look for "DarkIdol"
-                    # For Aletheia: look for "Aletheia" or "Llama-3.2-3B" vs "Llama-3.1-8B"
+                    # For Qwen: look for "Qwen"
                     
                     match_found = False
                     candidate_file = None
@@ -181,10 +181,10 @@ class ModelManager:
                             match_found = True
                             candidate_file = candidate
                             break
-                        elif "Aletheia" in repo_name_part and ("Aletheia" in candidate or "Llama-3.2" in candidate):
-                            match_found = True
-                            candidate_file = candidate
-                            break
+                        elif "Qwen2.5-3B" in repo_id and "qwen2.5-3b-instruct" in candidate.lower():
+                             match_found = True
+                             candidate_file = candidate
+                             break
                         elif "Llama-3.1" in repo_name_part and "Llama-3.1" in candidate:
                              match_found = True
                              candidate_file = candidate
@@ -326,10 +326,11 @@ class ModelManager:
             raise
 
     @classmethod
-    def get_model(cls, repo_id: str, n_ctx: int = 4096, n_gpu_layers: int = -1) -> 'Llama':
+    def get_model(cls, repo_id: str, n_ctx: int = 8192, n_gpu_layers: int = -1) -> 'Llama':
         """
         Get or load a Llama model instance.
         Enforces single-model policy to prevent VRAM OOM.
+        Uses 8192 context by default to accommodate RAG content.
         """
         if repo_id in cls._instances:
             return cls._instances[repo_id]
@@ -390,11 +391,48 @@ class ModelManager:
             # n_gpu_layers = -1 means 'all layers' (good for 3060 12GB)
             # n_ctx depends on usage (8192 for darkidol, 2048 for joints)
             
+            # Check model file size for multi-GPU splitting logic
+            file_stats = os.stat(model_path)
+            file_size_gb = file_stats.st_size / (1024 * 1024 * 1024)
+            
+            # Default params
+            split_mode = 1 # LLAMA_SPLIT_MODE_LAYER
+            tensor_split = None
+            
+            # Auto-detect multi-GPU/large model scenario
+            # If model is > 16GB (e.g. 32B model) and we have multiple GPUs
+            try:
+                import torch
+                gpu_count = torch.cuda.device_count()
+            except ImportError:
+                gpu_count = 0
+            
+            if file_size_gb > 16.0 and gpu_count > 1:
+                print(f"⚠️ Large model detected ({file_size_gb:.1f} GB) with {gpu_count} GPUs.")
+                print("   -> Activating Multi-GPU Tensor Split Mode (ROW SPLIT).")
+                
+                # Force context reduction if not explicit to save VRAM
+                # Context reduction removed to allow dynamic sizing as requested
+                # if n_ctx > 2048:
+                #     pass
+                
+                # Strategy D: No-mmap + Conservative Offload
+                # "ValueError" without OOM suggests mmap/loading issue or fragmentation.
+                # We disable mmap to force clean load.
+                # We use 48 layers (~75% of model) which should fit ~10.5GB per card
+                print("   -> Offloading 48/64 layers to GPUs (No MMAP).")
+                n_gpu_layers = 48
+                tensor_split = None
+                split_mode = 1 # LLAMA_SPLIT_MODE_LAYER (Default)
+                
             llm = Llama(
                 model_path=model_path,
                 n_gpu_layers=n_gpu_layers,
                 n_ctx=n_ctx,
-                verbose=False
+                split_mode=split_mode,
+                tensor_split=tensor_split,
+                use_mmap=False, # Attempt to fix loading error
+                verbose=True 
             )
             
             cls._instances[repo_id] = llm

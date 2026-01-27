@@ -35,7 +35,8 @@ if __name__ == "__main__":
     # Identify models from config
     models_to_download = [
         config.MODEL_QWEN_1_5B, # Fast Joint Model
-        config.MODEL_NVIDIA_8B  # Smart/Reasoning Model (Nvidia 8B)
+        config.MODEL_NVIDIA_8B, # Smart/Reasoning Model (Nvidia 8B)
+        config.DEFAULT_MODEL    # Main Chat Model (Qwen 3B)
     ]
 
     # De-duplicate

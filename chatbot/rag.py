@@ -490,7 +490,19 @@ class RAGSystem:
             )
             
             if scored_results:
-                highest_score = max(score for _, score in scored_results)
+                # Update scores in the actual result objects
+                # scored_results is list of (title, score)
+                score_map = {t: s for t, s in scored_results}
+                
+                highest_score = 0.0
+                for res in ctx.retrieved_data:
+                    t = res.get('metadata', {}).get('title', '')
+                    if t in score_map:
+                        new_score = score_map[t]
+                        res['score'] = new_score
+                        if new_score > highest_score:
+                            highest_score = new_score
+                            
                 ctx.signals["highest_source_score"] = highest_score
                 ctx.log(f"  Highest score: {highest_score:.1f}/10")
             else:
@@ -837,7 +849,7 @@ class RAGSystem:
                                             'path': path_var,
                                             'source_zim': zim_path
                                         },
-                                        'score': 100.0,
+                                        'score': 10.0,
                                         'search_context': {'entities': candidates}
                                     })
                                     
@@ -874,7 +886,7 @@ class RAGSystem:
                                         'path': entry.path,
                                         'source_zim': zim_path
                                     },
-                                    'score': 100.0,
+                                    'score': 10.0,
                                     'search_context': {'entities': candidates}
                                 })
                                 
