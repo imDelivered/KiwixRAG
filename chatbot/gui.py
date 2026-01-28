@@ -527,9 +527,9 @@ class ChatbotGUI:
         """Get the current pulse color based on step."""
         # Pulse between dim gray and bright text color
         if self.dark_mode:
-            # Dark mode: pulse between #555555 (dim) and #FFFFFF (bright)
-            base_val = 85  # 0x55
-            range_val = 170  # 0xFF - 0x55
+            # Dark mode: pulse between #AAAAAA (light gray) and #FFFFFF (white)
+            base_val = 170  # 0xAA
+            range_val = 85   # 0xFF - 0xAA
         else:
             # Light mode: pulse between #999999 (dim) and #000000 (bright)
             base_val = 153  # 0x99
