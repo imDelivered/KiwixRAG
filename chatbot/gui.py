@@ -1686,7 +1686,7 @@ Keyboard Shortcuts:
         self.history.append(Message(role="user", content=user_input))
         
         # Show loading state
-        self.show_loading("Thinking")
+        self.show_loading("Processing Request")
         
         # Get response in background
         threading.Thread(target=self.get_response, args=(user_input,), daemon=True).start()
